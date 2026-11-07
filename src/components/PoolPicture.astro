@@ -1,0 +1,944 @@
+---
+import { POOL_PRESETS } from '../lib/pool-presets';
+
+const initial = POOL_PRESETS.normal;
+// Display order from left to right: Buffer [5] (leftmost) -> Buffer [0] (rightmost, closest to workers)
+const slotsLeftToRight = [5, 4, 3, 2, 1, 0];
+const slotX = (slotIndex: number) => 44 + (5 - slotIndex) * 108;
+
+const toneFill = (tone: 'cyan' | 'coral' | 'amber') => {
+	if (tone === 'coral') return 'var(--job-coral)';
+	if (tone === 'amber') return 'var(--job-amber)';
+	return 'var(--job-cyan)';
+};
+
+const toneInk = (tone: 'cyan' | 'coral' | 'amber') => {
+	if (tone === 'coral') return 'var(--job-coral-ink)';
+	if (tone === 'amber') return 'var(--job-amber-ink)';
+	return 'var(--job-cyan-ink)';
+};
+---
+
+<section class="pool-screen" aria-label="Worker pool harbor chart">
+	<div class="picture-frame" data-visual="harbor-chart">
+		<svg
+			class="harbor-svg"
+			viewBox="0 0 1120 460"
+			role="img"
+			aria-label="Harbor chart picture of one Go worker pool showing the channel, six buffer slots with Buffer 0 on the right, waiting jobs, and up to six workers."
+		>
+			<!-- Harbor chart border and grid -->
+			<rect x="8" y="8" width="1104" height="444" rx="6" fill="var(--bg-paper)" stroke="var(--line)" stroke-width="1.5" />
+			<text
+				id="chart-banner"
+				x="28"
+				y="38"
+				fill="var(--ink)"
+				font-family="var(--font-mono)"
+				font-size="13"
+				font-weight="700"
+			>
+				WORKER POOL HARBOR CHART // CHANNEL BUFFER CAP = 6 // WORKERS = 3 // CTX TIMEOUT = 6s
+			</text>
+
+			<!-- Channel water -->
+			<g data-channel="jobs">
+				<rect
+					id="channel-box"
+					x="28"
+					y="64"
+					width="684"
+					height="360"
+					rx="6"
+					fill="var(--bg-channel)"
+					stroke="var(--go-blue)"
+					stroke-width="1.5"
+				/>
+				<text x="44" y="92" fill="var(--ink)" font-family="var(--font-mono)" font-size="13" font-weight="700">
+					Channel (buffered job channel: chan Job)
+				</text>
+				<text x="44" y="112" fill="var(--ink-muted)" font-family="var(--font-mono)" font-size="11">
+					Jobs enqueue on the left and advance right to Buffer [0] before entering an idle worker
+				</text>
+
+				<!-- 6 Buffer slots: Buffer [5] on the left -> Buffer [0] on the right -->
+				{
+					slotsLeftToRight.map((slotIndex) => {
+						const x = slotX(slotIndex);
+						const job = initial.waitingJobs.find((j) => j.slot === slotIndex);
+						return (
+							<g data-slot={slotIndex} transform={`translate(${x}, 140)`}>
+								<rect
+									data-slot-rect={slotIndex}
+									x="0"
+									y="0"
+									width="96"
+									height="244"
+									rx="4"
+									fill="var(--bg-slot)"
+									stroke={slotIndex === 0 ? 'var(--go-blue)' : 'var(--line)'}
+									stroke-width="1.5"
+									stroke-dasharray="4 3"
+								/>
+								<text
+									x="10"
+									y="22"
+									fill={slotIndex === 0 ? 'var(--go-blue)' : 'var(--ink-muted)'}
+									font-family="var(--font-mono)"
+									font-size="11"
+									font-weight={slotIndex === 0 ? '700' : '400'}
+								>
+									{`Buffer [${slotIndex}]`}
+								</text>
+								<g
+									data-job={slotIndex}
+									class="channel-job-group"
+									style={job ? 'opacity: 1;' : 'opacity: 0;'}
+									transform="translate(8, 36)"
+								>
+									<rect
+										data-job-rect={slotIndex}
+										x="0"
+										y="0"
+										width="80"
+										height="192"
+										rx="4"
+										fill={job ? toneFill(job.tone) : 'var(--job-cyan)'}
+										stroke="var(--ink)"
+										stroke-width="1.2"
+									/>
+									<text
+										data-job-id={slotIndex}
+										x="10"
+										y="32"
+										fill={job ? toneInk(job.tone) : 'var(--job-cyan-ink)'}
+										font-family="var(--font-mono)"
+										font-size="12"
+										font-weight="700"
+									>
+										{job ? job.id : ''}
+									</text>
+									<text
+										data-job-time={slotIndex}
+										x="10"
+										y="56"
+										fill={job ? toneInk(job.tone) : 'var(--job-cyan-ink)'}
+										font-family="var(--font-mono)"
+										font-size="11"
+									>
+										{job ? `${job.durationSec}s work` : ''}
+									</text>
+									<text
+										data-job-tag={slotIndex}
+										x="10"
+										y="80"
+										fill={job ? toneInk(job.tone) : 'var(--job-cyan-ink)'}
+										font-family="var(--font-mono)"
+										font-size="10"
+									>
+										{job ? (job.durationSec > 6 ? '>6s timeout' : 'queued') : ''}
+									</text>
+								</g>
+							</g>
+						);
+					})
+				}
+			</g>
+
+			<!-- Dispatch connector lines from Buffer [0] (right edge of channel) to Workers -->
+			{
+				initial.workers.map((worker, idx) => {
+					const y = 91 + idx * 60;
+					const active = idx < initial.workerCount;
+					return (
+						<line
+							data-connector={worker.id}
+							x1="712"
+							y1={y}
+							x2="748"
+							y2={y}
+							stroke="var(--go-blue)"
+							stroke-width="2"
+							style={active ? 'opacity: 1;' : 'opacity: 0.2;'}
+						/>
+					);
+				})
+			}
+
+			<!-- Up to 6 Workers -->
+			{
+				initial.workers.map((worker, idx) => {
+					const y = 64 + idx * 60;
+					const isActive = idx < initial.workerCount;
+					const isBusy = worker.status === 'BUSY';
+					const barWidth = Math.round((worker.progressPct / 100) * 316);
+					return (
+						<g
+							data-worker={worker.id}
+							transform={`translate(748, ${y})`}
+							style={isActive ? 'opacity: 1;' : 'opacity: 0.25;'}
+						>
+							<rect
+								data-worker-card={worker.id}
+								x="0"
+								y="0"
+								width="344"
+								height="52"
+								rx="5"
+								fill="var(--bg-panel)"
+								stroke={isBusy ? 'var(--worker-busy)' : 'var(--line)'}
+								stroke-width={isBusy ? '2' : '1.5'}
+							/>
+							<text x="14" y="20" fill="var(--ink)" font-family="var(--font-mono)" font-size="12" font-weight="700">
+								{`Worker ${worker.id}`}
+							</text>
+							<!-- Active job tone pill docked inside the worker -->
+							<rect
+								data-worker-pill={worker.id}
+								x="84"
+								y="9"
+								width="10"
+								height="13"
+								rx="2"
+								fill={isBusy ? toneFill(worker.tone) : 'var(--line)'}
+								stroke="var(--ink)"
+								stroke-width="0.8"
+								style={isBusy ? 'opacity: 1;' : 'opacity: 0;'}
+							/>
+							<text
+								data-worker-job={worker.id}
+								x="100"
+								y="20"
+								fill="var(--ink-muted)"
+								font-family="var(--font-mono)"
+								font-size="11"
+							>
+								{worker.jobId
+									? `${worker.jobId} • ${worker.remainingSec.toFixed(1)}s left (${worker.progressPct}%)`
+									: isActive
+										? 'Waiting on <-jobs'
+										: 'Offline'}
+							</text>
+							<text
+								data-worker-status={worker.id}
+								x="330"
+								y="20"
+								text-anchor="end"
+								fill={isBusy ? 'var(--worker-busy)' : 'var(--worker-idle)'}
+								font-family="var(--font-mono)"
+								font-size="11"
+								font-weight="700"
+							>
+								{isActive ? worker.status : 'OFF'}
+							</text>
+							<rect
+								x="14"
+								y="30"
+								width="316"
+								height="12"
+								rx="3"
+								fill="var(--progress-track)"
+								stroke="var(--line)"
+								stroke-width="1"
+							/>
+							<rect
+								data-progress={worker.id}
+								class="worker-progress-bar"
+								x="14"
+								y="30"
+								width={barWidth}
+								height="12"
+								rx="3"
+								fill="var(--go-cyan)"
+							/>
+						</g>
+					);
+				})
+			}
+
+			<!-- Transient animation layer for jobs flying from Buffer [0] to a Worker -->
+			<g id="dispatch-flight-layer" pointer-events="none"></g>
+		</svg>
+	</div>
+
+	<div class="instrument-bar" aria-label="Worker pool controls and readout">
+		<div class="readout-strip" aria-live="polite">
+			<div class="readout-metrics">
+				<span class="readout-item">
+					Buffer: <strong id="readout-buffer">{`${initial.waitingJobs.length} / ${initial.bufferCapacity}`}</strong>
+				</span>
+				<span class="readout-item">
+					Active workers: <strong id="readout-workers">{`${initial.workers.filter((w) => w.status === 'BUSY').length} / ${initial.workerCount}`}</strong>
+				</span>
+				<span class="readout-item">
+					Completed jobs: <strong id="readout-completed">{initial.completedJobs}</strong>
+				</span>
+				<span class="readout-item">
+					Timeouts / Retries: <strong id="readout-timeouts">{initial.timedOutJobs}</strong>
+				</span>
+				<span class="readout-item">
+					State: <strong id="readout-state">Ready</strong>
+				</span>
+			</div>
+
+			<div class="preset-group">
+				<label for="preset-select">Preset:</label>
+				<select id="preset-select" class="preset-select">
+					<option value="normal" selected>Normal run</option>
+					<option value="full">Full buffer</option>
+					<option value="idle">All workers idle</option>
+				</select>
+			</div>
+		</div>
+
+		<div class="controls-row">
+			<button type="button" class="control-button control-button-primary" id="ctrl-run">
+				Start
+			</button>
+			<button type="button" class="control-button" id="ctrl-add-job">
+				+ Add Job (1–10s)
+			</button>
+			<button type="button" class="control-button" id="ctrl-step">
+				Step (+0.5s)
+			</button>
+			<button type="button" class="control-button" id="ctrl-reset">
+				Reset
+			</button>
+
+			<label class="control-field" for="ctrl-workers">
+				<span>Workers</span>
+				<input id="ctrl-workers" type="range" min="1" max="6" value="3" />
+				<output id="out-workers" for="ctrl-workers">3</output>
+			</label>
+
+			<label class="control-field" for="ctrl-buffer">
+				<span>Buffer</span>
+				<input id="ctrl-buffer" type="range" min="1" max="6" value="6" />
+				<output id="out-buffer" for="ctrl-buffer">6</output>
+			</label>
+
+			<label class="control-field" for="ctrl-job-time">
+				<span>ctx Timeout</span>
+				<input id="ctrl-job-time" type="range" min="3" max="10" value="6" />
+				<output id="out-job-time" for="ctrl-job-time">6s</output>
+			</label>
+
+			<label class="control-field control-toggle" for="ctrl-resilience">
+				<input id="ctrl-resilience" type="checkbox" checked />
+				<span>Resilience (Timeout + Retry)</span>
+			</label>
+
+			<label class="control-field control-toggle" for="ctrl-autofeed">
+				<input id="ctrl-autofeed" type="checkbox" />
+				<span>Auto-feed</span>
+			</label>
+		</div>
+	</div>
+</section>
+
+<script>
+	import { POOL_PRESETS, type JobTone, type PoolState, type WaitingJob, type WorkerSlot } from '../lib/pool-presets';
+
+	const TONES: JobTone[] = ['cyan', 'coral', 'amber'];
+	const SVG_NS = 'http://www.w3.org/2000/svg';
+	const slotX = (slotIndex: number) => 44 + (5 - slotIndex) * 108;
+
+	const prefersReducedMotion = () =>
+		window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+	const toneFill = (tone: JobTone) => {
+		if (tone === 'coral') return 'var(--job-coral)';
+		if (tone === 'amber') return 'var(--job-amber)';
+		return 'var(--job-cyan)';
+	};
+
+	const toneInk = (tone: JobTone) => {
+		if (tone === 'coral') return 'var(--job-coral-ink)';
+		if (tone === 'amber') return 'var(--job-amber-ink)';
+		return 'var(--job-cyan-ink)';
+	};
+
+	interface LiveWorker extends WorkerSlot {
+		elapsedSec: number;
+		timeoutFlashSec: number;
+	}
+
+	interface LivePoolState {
+		key: PoolState['key'];
+		bufferCapacity: number;
+		workerCount: number;
+		timeoutSec: number;
+		resilienceEnabled: boolean;
+		autoFeed: boolean;
+		running: boolean;
+		statusNote: string;
+		completedJobs: number;
+		timedOutJobs: number;
+		nextJobNumber: number;
+		autoFeedTimerSec: number;
+		enqueueCooldownSec: number;
+		waitingJobs: WaitingJob[];
+		workers: LiveWorker[];
+	}
+
+	const cloneFromPreset = (preset: PoolState): LivePoolState => {
+		const waitingJobs = preset.waitingJobs.map((j, idx) => ({
+			...j,
+			slot: idx,
+			retryCount: j.retryCount ?? 0,
+		}));
+
+		const workers: LiveWorker[] = Array.from({ length: 6 }, (_, i) => {
+			const existing = preset.workers[i];
+			if (existing && existing.status === 'BUSY' && existing.jobId) {
+				const dur = existing.durationSec || 4;
+				const rem = existing.remainingSec ?? dur * (1 - existing.progressPct / 100);
+				return {
+					...existing,
+					durationSec: dur,
+					remainingSec: rem,
+					elapsedSec: dur - rem,
+					timeoutFlashSec: 0,
+					retryCount: existing.retryCount ?? 0,
+				};
+			}
+			return {
+				id: i + 1,
+				status: 'IDLE',
+				jobId: null,
+				durationSec: 0,
+				remainingSec: 0,
+				progressPct: 0,
+				tone: 'cyan',
+				retryCount: 0,
+				elapsedSec: 0,
+				timeoutFlashSec: 0,
+			};
+		});
+
+		return {
+			key: preset.key,
+			bufferCapacity: preset.bufferCapacity,
+			workerCount: preset.workerCount,
+			timeoutSec: preset.jobTimeSec,
+			resilienceEnabled: true,
+			autoFeed: false,
+			running: false,
+			statusNote: 'Ready',
+			completedJobs: preset.completedJobs,
+			timedOutJobs: preset.timedOutJobs ?? 0,
+			nextJobNumber: 108,
+			autoFeedTimerSec: 0,
+			enqueueCooldownSec: 0,
+			waitingJobs,
+			workers,
+		};
+	};
+
+	const state: LivePoolState = cloneFromPreset(POOL_PRESETS.normal);
+
+	const reindexQueue = () => {
+		state.waitingJobs.forEach((job, idx) => {
+			job.slot = idx;
+		});
+	};
+
+	/**
+	 * Animate a newly enqueued job sliding in from the left channel entrance into its target slot.
+	 */
+	const animateJobEnqueue = (targetSlot: number) => {
+		if (prefersReducedMotion()) return;
+		const jobGroup = document.querySelector<SVGGElement>(`[data-job="${targetSlot}"]`);
+		if (!jobGroup || typeof jobGroup.animate !== 'function') return;
+
+		// Distance from the left entrance of the channel (x = 36) to the target slot
+		const entranceDeltaX = 36 - (slotX(targetSlot) + 8);
+		jobGroup.animate(
+			[
+				{ transform: `translate(${entranceDeltaX}px, 36px) scale(0.92)`, opacity: 0.25 },
+				{ transform: 'translate(8px, 36px) scale(1)', opacity: 1 },
+			],
+			{
+				duration: 280,
+				easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+			}
+		);
+	};
+
+	/**
+	 * Animate waiting jobs shifting one slot to the right (+108px) when Buffer [0] is pulled.
+	 */
+	const animateQueueShiftRight = (shiftedCount: number) => {
+		if (prefersReducedMotion()) return;
+		for (let slot = 0; slot < shiftedCount; slot++) {
+			const jobGroup = document.querySelector<SVGGElement>(`[data-job="${slot}"]`);
+			if (!jobGroup || typeof jobGroup.animate !== 'function') continue;
+			// Previous slot was slot + 1, which sits 108px to the left (-108px) of current slot
+			jobGroup.animate(
+				[
+					{ transform: 'translate(-100px, 36px)' },
+					{ transform: 'translate(8px, 36px)' },
+				],
+				{
+					duration: 240,
+					easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+				}
+			);
+		}
+	};
+
+	/**
+	 * Animate the pulled job flying from Buffer [0] (x=592, y=176) right into the target Worker card.
+	 */
+	const animateJobToWorker = (job: WaitingJob, workerId: number) => {
+		if (prefersReducedMotion()) return;
+		const layer = document.getElementById('dispatch-flight-layer');
+		if (!layer) return;
+
+		const startX = slotX(0) + 8; // 592
+		const startY = 140 + 36; // 176
+		const targetX = 748 + 84; // Worker pill X
+		const targetY = 64 + (workerId - 1) * 60 + 9; // Worker pill Y
+
+		const flyer = document.createElementNS(SVG_NS, 'g');
+		const rect = document.createElementNS(SVG_NS, 'rect');
+		rect.setAttribute('x', '0');
+		rect.setAttribute('y', '0');
+		rect.setAttribute('width', '80');
+		rect.setAttribute('height', '192');
+		rect.setAttribute('rx', '4');
+		rect.setAttribute('fill', toneFill(job.tone));
+		rect.setAttribute('stroke', 'var(--ink)');
+		rect.setAttribute('stroke-width', '1.2');
+
+		const label = document.createElementNS(SVG_NS, 'text');
+		label.setAttribute('x', '10');
+		label.setAttribute('y', '32');
+		label.setAttribute('fill', toneInk(job.tone));
+		label.setAttribute('font-family', 'var(--font-mono)');
+		label.setAttribute('font-size', '12');
+		label.setAttribute('font-weight', '700');
+		label.textContent = job.id;
+
+		flyer.appendChild(rect);
+		flyer.appendChild(label);
+		layer.appendChild(flyer);
+
+		if (typeof flyer.animate === 'function') {
+			const anim = flyer.animate(
+				[
+					{
+						transform: `translate(${startX}px, ${startY}px) scale(1, 1)`,
+						opacity: 0.95,
+					},
+					{
+						transform: `translate(${targetX}px, ${targetY}px) scale(0.18, 0.08)`,
+						opacity: 0.15,
+					},
+				],
+				{
+					duration: 260,
+					easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+				}
+			);
+			anim.onfinish = () => flyer.remove();
+		} else {
+			setTimeout(() => flyer.remove(), 260);
+		}
+	};
+
+	const enqueueRandomJob = (customDuration?: number, retryOf?: { id: string; retryCount: number; tone: JobTone }) => {
+		if (state.waitingJobs.length >= state.bufferCapacity) {
+			state.statusNote = 'Channel full (backpressure)';
+			const channelBox = document.getElementById('channel-box');
+			channelBox?.setAttribute('stroke', 'var(--job-coral)');
+			setTimeout(() => {
+				channelBox?.setAttribute('stroke', 'var(--go-blue)');
+			}, 450);
+			render();
+			return false;
+		}
+
+		const durationSec = customDuration ?? Math.floor(Math.random() * 10) + 1;
+		const jobNum = state.nextJobNumber++;
+		const tone = retryOf ? retryOf.tone : TONES[jobNum % TONES.length];
+		const id = retryOf ? retryOf.id : `Job ${jobNum}`;
+		const retryCount = retryOf ? retryOf.retryCount : 0;
+		const newSlot = state.waitingJobs.length;
+
+		state.waitingJobs.push({
+			id,
+			slot: newSlot,
+			durationSec,
+			tone,
+			retryCount,
+		});
+		reindexQueue();
+		if (newSlot === 0) {
+			state.enqueueCooldownSec = 0.28;
+		}
+		state.statusNote = retryOf ? `Re-queued ${id} (retry ${retryCount}/2)` : `Enqueued ${id} (${durationSec}s)`;
+		render();
+		animateJobEnqueue(newSlot);
+		return true;
+	};
+
+	const dispatchWaitingJobs = () => {
+		if (state.enqueueCooldownSec > 0) return;
+		let pulledCount = 0;
+		for (let i = 0; i < state.workerCount; i++) {
+			const worker = state.workers[i];
+			if (worker.status === 'IDLE' && state.waitingJobs.length > 0) {
+				const nextJob = state.waitingJobs.shift()!;
+				reindexQueue();
+				pulledCount += 1;
+				worker.status = 'BUSY';
+				worker.jobId = nextJob.id;
+				worker.durationSec = nextJob.durationSec;
+				worker.elapsedSec = 0;
+				worker.remainingSec = nextJob.durationSec;
+				worker.progressPct = 0;
+				worker.tone = nextJob.tone;
+				worker.retryCount = nextJob.retryCount ?? 0;
+				state.statusNote = `Worker ${worker.id} pulled ${nextJob.id} from Buffer [0]`;
+				animateJobToWorker(nextJob, worker.id);
+			}
+		}
+		if (pulledCount > 0) {
+			render();
+			if (state.waitingJobs.length > 0) {
+				animateQueueShiftRight(state.waitingJobs.length);
+			}
+		}
+	};
+
+	const stepSimulation = (dtSec: number) => {
+		if (state.enqueueCooldownSec > 0) {
+			state.enqueueCooldownSec = Math.max(0, state.enqueueCooldownSec - dtSec);
+		}
+
+		// 1. Pull waiting jobs from Buffer [0] into any idle active workers
+		dispatchWaitingJobs();
+
+		// 2. Advance active workers
+		for (let i = 0; i < 6; i++) {
+			const worker = state.workers[i];
+
+			if (worker.status === 'TIMEOUT') {
+				worker.timeoutFlashSec -= dtSec;
+				if (worker.timeoutFlashSec <= 0) {
+					worker.status = 'IDLE';
+					worker.jobId = null;
+					worker.durationSec = 0;
+					worker.remainingSec = 0;
+					worker.elapsedSec = 0;
+					worker.progressPct = 0;
+				}
+				continue;
+			}
+
+			if (worker.status !== 'BUSY' || !worker.jobId) continue;
+
+			worker.elapsedSec += dtSec;
+			worker.remainingSec = Math.max(0, worker.durationSec - worker.elapsedSec);
+			worker.progressPct = Math.min(100, Math.round((worker.elapsedSec / worker.durationSec) * 100));
+
+			// Check resilience context deadline
+			if (
+				state.resilienceEnabled &&
+				worker.durationSec > state.timeoutSec &&
+				worker.elapsedSec >= state.timeoutSec
+			) {
+				const timedOutId = worker.jobId;
+				const prevRetry = worker.retryCount ?? 0;
+				const prevTone = worker.tone;
+
+				state.timedOutJobs += 1;
+				worker.status = 'TIMEOUT';
+				worker.timeoutFlashSec = 0.75;
+				worker.remainingSec = 0;
+
+				if (prevRetry < 2 && state.waitingJobs.length < state.bufferCapacity) {
+					const retryDuration = Math.max(2, Math.min(state.timeoutSec - 1, Math.ceil(worker.durationSec / 2)));
+					enqueueRandomJob(retryDuration, {
+						id: timedOutId,
+						retryCount: prevRetry + 1,
+						tone: prevTone,
+					});
+				} else {
+					state.statusNote = `${timedOutId} timed out (${state.timeoutSec}s ctx)`;
+				}
+				continue;
+			}
+
+			// Normal job completion
+			if (worker.elapsedSec >= worker.durationSec) {
+				const finishedId = worker.jobId;
+				state.completedJobs += 1;
+				worker.status = 'IDLE';
+				worker.jobId = null;
+				worker.durationSec = 0;
+				worker.remainingSec = 0;
+				worker.elapsedSec = 0;
+				worker.progressPct = 0;
+				state.statusNote = `${finishedId} completed`;
+			}
+		}
+
+		// 3. Immediately pull from Buffer [0] if a worker just became IDLE
+		dispatchWaitingJobs();
+
+		// 4. Optional auto-feed
+		if (state.autoFeed && state.running) {
+			state.autoFeedTimerSec += dtSec;
+			if (state.autoFeedTimerSec >= 1.8) {
+				state.autoFeedTimerSec = 0;
+				if (state.waitingJobs.length < state.bufferCapacity) {
+					enqueueRandomJob();
+					dispatchWaitingJobs();
+				}
+			}
+		}
+
+		render();
+	};
+
+	const render = () => {
+		const bufferEl = document.getElementById('readout-buffer');
+		const workersEl = document.getElementById('readout-workers');
+		const completedEl = document.getElementById('readout-completed');
+		const timeoutsEl = document.getElementById('readout-timeouts');
+		const stateEl = document.getElementById('readout-state');
+		const bannerEl = document.getElementById('chart-banner');
+		const runBtn = document.getElementById('ctrl-run');
+
+		const busyCount = state.workers
+			.slice(0, state.workerCount)
+			.filter((w) => w.status === 'BUSY' || w.status === 'TIMEOUT').length;
+
+		if (bufferEl) bufferEl.textContent = `${state.waitingJobs.length} / ${state.bufferCapacity}`;
+		if (workersEl) workersEl.textContent = `${busyCount} / ${state.workerCount}`;
+		if (completedEl) completedEl.textContent = String(state.completedJobs);
+		if (timeoutsEl) timeoutsEl.textContent = String(state.timedOutJobs);
+		if (stateEl) stateEl.textContent = state.running ? `Running • ${state.statusNote}` : state.statusNote;
+		if (runBtn) runBtn.textContent = state.running ? 'Pause' : 'Start';
+		if (bannerEl) {
+			const ctxText = state.resilienceEnabled ? `${state.timeoutSec}s` : 'OFF';
+			bannerEl.textContent = `WORKER POOL HARBOR CHART // CHANNEL BUFFER CAP = ${state.bufferCapacity} // WORKERS = ${state.workerCount} // CTX TIMEOUT = ${ctxText}`;
+		}
+
+		for (let slot = 0; slot < 6; slot++) {
+			const slotGroup = document.querySelector<SVGGElement>(`[data-slot="${slot}"]`);
+			const jobGroup = document.querySelector<SVGGElement>(`[data-job="${slot}"]`);
+			const jobRect = document.querySelector<SVGRectElement>(`[data-job-rect="${slot}"]`);
+			const jobId = document.querySelector<SVGTextElement>(`[data-job-id="${slot}"]`);
+			const jobTime = document.querySelector<SVGTextElement>(`[data-job-time="${slot}"]`);
+			const jobTag = document.querySelector<SVGTextElement>(`[data-job-tag="${slot}"]`);
+			const job = state.waitingJobs.find((j) => j.slot === slot);
+			const withinCap = slot < state.bufferCapacity;
+
+			if (slotGroup) {
+				slotGroup.style.opacity = withinCap ? '1' : '0.25';
+			}
+			if (!jobGroup || !jobRect || !jobId || !jobTime) continue;
+
+			if (job && withinCap) {
+				jobGroup.style.opacity = '1';
+				jobRect.setAttribute('fill', toneFill(job.tone));
+				jobId.setAttribute('fill', toneInk(job.tone));
+				jobTime.setAttribute('fill', toneInk(job.tone));
+				jobId.textContent = job.id;
+				jobTime.textContent = `${job.durationSec}s work`;
+				if (jobTag) {
+					jobTag.setAttribute('fill', toneInk(job.tone));
+					if (job.retryCount && job.retryCount > 0) {
+						jobTag.textContent = `retry ${job.retryCount}/2`;
+					} else if (state.resilienceEnabled && job.durationSec > state.timeoutSec) {
+						jobTag.textContent = `>${state.timeoutSec}s timeout`;
+					} else {
+						jobTag.textContent = 'queued';
+					}
+				}
+			} else {
+				jobGroup.style.opacity = '0';
+				jobId.textContent = '';
+				jobTime.textContent = '';
+				if (jobTag) jobTag.textContent = '';
+			}
+		}
+
+		for (let idx = 0; idx < 6; idx++) {
+			const worker = state.workers[idx];
+			const isActive = idx < state.workerCount;
+			const workerGroup = document.querySelector<SVGGElement>(`[data-worker="${worker.id}"]`);
+			const connector = document.querySelector<SVGLineElement>(`[data-connector="${worker.id}"]`);
+			const card = document.querySelector<SVGRectElement>(`[data-worker-card="${worker.id}"]`);
+			const pill = document.querySelector<SVGRectElement>(`[data-worker-pill="${worker.id}"]`);
+			const status = document.querySelector<SVGTextElement>(`[data-worker-status="${worker.id}"]`);
+			const jobLabel = document.querySelector<SVGTextElement>(`[data-worker-job="${worker.id}"]`);
+			const progress = document.querySelector<SVGRectElement>(`[data-progress="${worker.id}"]`);
+			const isBusy = worker.status === 'BUSY';
+			const isTimeout = worker.status === 'TIMEOUT';
+
+			if (workerGroup) {
+				workerGroup.style.opacity = isActive ? '1' : '0.24';
+			}
+			if (connector) {
+				connector.style.opacity = isActive ? '1' : '0.2';
+			}
+			if (card) {
+				const strokeColor = isTimeout
+					? 'var(--job-coral)'
+					: isBusy
+						? 'var(--worker-busy)'
+						: 'var(--line)';
+				card.setAttribute('stroke', strokeColor);
+				card.setAttribute('stroke-width', isBusy || isTimeout ? '2' : '1.5');
+			}
+			if (pill) {
+				pill.style.opacity = isActive && (isBusy || isTimeout) ? '1' : '0';
+				pill.setAttribute('fill', isTimeout ? 'var(--job-coral)' : toneFill(worker.tone));
+			}
+			if (status) {
+				status.textContent = isActive ? worker.status : 'OFF';
+				const statusFill = isTimeout
+					? 'var(--job-coral)'
+					: isBusy
+						? 'var(--worker-busy)'
+						: 'var(--worker-idle)';
+				status.setAttribute('fill', statusFill);
+			}
+			if (jobLabel) {
+				if (!isActive) {
+					jobLabel.textContent = 'Offline';
+				} else if (isTimeout && worker.jobId) {
+					jobLabel.textContent = `${worker.jobId} • CTX TIMEOUT (${state.timeoutSec}s)`;
+				} else if (isBusy && worker.jobId) {
+					const retrySuffix = worker.retryCount ? ` [r${worker.retryCount}]` : '';
+					jobLabel.textContent = `${worker.jobId}${retrySuffix} • ${worker.remainingSec.toFixed(1)}s left (${worker.progressPct}%)`;
+				} else {
+					jobLabel.textContent = 'Waiting on <-jobs';
+				}
+			}
+			if (progress) {
+				const width = Math.round((worker.progressPct / 100) * 316);
+				progress.setAttribute('width', String(width));
+				progress.setAttribute('fill', isTimeout ? 'var(--job-coral)' : 'var(--go-cyan)');
+			}
+		}
+	};
+
+	let rafId: number | null = null;
+	let lastTs: number | null = null;
+
+	const tick = (ts: number) => {
+		if (!state.running) return;
+		if (lastTs === null) lastTs = ts;
+		const dtSec = Math.min(0.1, (ts - lastTs) / 1000);
+		lastTs = ts;
+		stepSimulation(dtSec);
+		rafId = requestAnimationFrame(tick);
+	};
+
+	const setRunning = (nextRunning: boolean) => {
+		state.running = nextRunning;
+		if (state.running) {
+			state.statusNote = 'Processing jobs';
+			lastTs = null;
+			rafId = requestAnimationFrame(tick);
+		} else {
+			if (rafId !== null) cancelAnimationFrame(rafId);
+			rafId = null;
+			lastTs = null;
+			state.statusNote = 'Paused';
+		}
+		render();
+	};
+
+	// Wire controls
+	const select = document.getElementById('preset-select') as HTMLSelectElement | null;
+	const runBtn = document.getElementById('ctrl-run') as HTMLButtonElement | null;
+	const addJobBtn = document.getElementById('ctrl-add-job') as HTMLButtonElement | null;
+	const stepBtn = document.getElementById('ctrl-step') as HTMLButtonElement | null;
+	const resetBtn = document.getElementById('ctrl-reset') as HTMLButtonElement | null;
+	const workersInput = document.getElementById('ctrl-workers') as HTMLInputElement | null;
+	const workersOut = document.getElementById('out-workers') as HTMLOutputElement | null;
+	const bufferInput = document.getElementById('ctrl-buffer') as HTMLInputElement | null;
+	const bufferOut = document.getElementById('out-buffer') as HTMLOutputElement | null;
+	const timeoutInput = document.getElementById('ctrl-job-time') as HTMLInputElement | null;
+	const timeoutOut = document.getElementById('out-job-time') as HTMLOutputElement | null;
+	const resilienceInput = document.getElementById('ctrl-resilience') as HTMLInputElement | null;
+	const autoFeedInput = document.getElementById('ctrl-autofeed') as HTMLInputElement | null;
+
+	const loadPreset = (key: PoolState['key']) => {
+		setRunning(false);
+		const preset = POOL_PRESETS[key] ?? POOL_PRESETS.normal;
+		const fresh = cloneFromPreset(preset);
+		Object.assign(state, fresh);
+		if (workersInput) workersInput.value = String(state.workerCount);
+		if (workersOut) workersOut.textContent = String(state.workerCount);
+		if (bufferInput) bufferInput.value = String(state.bufferCapacity);
+		if (bufferOut) bufferOut.textContent = String(state.bufferCapacity);
+		if (timeoutInput) timeoutInput.value = String(state.timeoutSec);
+		if (timeoutOut) timeoutOut.textContent = `${state.timeoutSec}s`;
+		if (resilienceInput) state.resilienceEnabled = resilienceInput.checked;
+		if (autoFeedInput) state.autoFeed = autoFeedInput.checked;
+		render();
+	};
+
+	select?.addEventListener('change', () => {
+		loadPreset(select.value as PoolState['key']);
+	});
+
+	runBtn?.addEventListener('click', () => {
+		setRunning(!state.running);
+	});
+
+	addJobBtn?.addEventListener('click', () => {
+		enqueueRandomJob();
+	});
+
+	stepBtn?.addEventListener('click', () => {
+		if (state.running) setRunning(false);
+		stepSimulation(0.5);
+	});
+
+	resetBtn?.addEventListener('click', () => {
+		const key = (select?.value as PoolState['key']) || 'normal';
+		loadPreset(key);
+	});
+
+	workersInput?.addEventListener('input', () => {
+		state.workerCount = Number(workersInput.value);
+		if (workersOut) workersOut.textContent = String(state.workerCount);
+		dispatchWaitingJobs();
+		render();
+	});
+
+	bufferInput?.addEventListener('input', () => {
+		state.bufferCapacity = Number(bufferInput.value);
+		if (bufferOut) bufferOut.textContent = String(state.bufferCapacity);
+		if (state.waitingJobs.length > state.bufferCapacity) {
+			state.waitingJobs.length = state.bufferCapacity;
+		}
+		render();
+	});
+
+	timeoutInput?.addEventListener('input', () => {
+		state.timeoutSec = Number(timeoutInput.value);
+		if (timeoutOut) timeoutOut.textContent = `${state.timeoutSec}s`;
+		render();
+	});
+
+	resilienceInput?.addEventListener('change', () => {
+		state.resilienceEnabled = resilienceInput.checked;
+		render();
+	});
+
+	autoFeedInput?.addEventListener('change', () => {
+		state.autoFeed = autoFeedInput.checked;
+		render();
+	});
+
+	render();
+</script>

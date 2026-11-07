@@ -1,0 +1,19 @@
+{
+  "name": "go-worker-pool",
+  "type": "module",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "check:tokens": "node -e \"import fs from 'node:fs'; import path from 'node:path'; const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]); const bad = walk('src').filter((f) => path.basename(f) !== 'tokens.css').flatMap((f) => fs.readFileSync(f, 'utf8').split('\\n').map((l, i) => /#[0-9a-fA-F]{3,8}\\b/.test(l) ? f + ':' + (i + 1) + ': ' + l.trim() : null).filter(Boolean)); if (bad.length) { console.error('Raw hex colors found outside src/styles/tokens.css:\\n' + bad.join('\\n')); process.exit(1); } console.log('PASS: All styles use tokens from src/styles/tokens.css');\""
+  },
+  "dependencies": {
+    "astro": "^7.4.7"
+  }
+}

@@ -1,0 +1,44 @@
+---
+import { sitePath } from '../lib/site-path';
+
+const links = [
+	{ href: sitePath(), label: 'Picture' },
+	{ href: sitePath('lessons/setup/'), label: 'Setup' },
+	{ href: sitePath('lessons/design/'), label: 'Design' },
+	{ href: sitePath('lessons/syntax/'), label: 'Syntax' },
+];
+---
+
+<header class="site-header">
+	<a class="mark" href={sitePath()}>Worker pool</a>
+	<div class="header-right">
+		<nav class="site-nav" aria-label="Lesson navigation">
+			{links.map((link) => <a href={link.href}>{link.label}</a>)}
+		</nav>
+		<button
+			type="button"
+			id="theme-toggle"
+			class="theme-button"
+			aria-label="Switch color theme"
+		>
+			Theme
+		</button>
+	</div>
+</header>
+
+<script>
+	const button = document.getElementById('theme-toggle');
+	const syncLabel = () => {
+		if (!button) return;
+		const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+		button.textContent = current === 'dark' ? 'Theme: Dark' : 'Theme: Light';
+	};
+	syncLabel();
+	button?.addEventListener('click', () => {
+		const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+		const next = current === 'dark' ? 'light' : 'dark';
+		document.documentElement.setAttribute('data-theme', next);
+		localStorage.setItem('theme', next);
+		syncLabel();
+	});
+</script>
