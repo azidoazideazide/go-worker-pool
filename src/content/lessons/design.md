@@ -1,73 +1,119 @@
 ---
-title: Design
-description: How each zone of the picture maps to Go — producer, channel, buffer, workers, and results.
-order: 2
+title: Concepts
+description: What a worker pool is, why workloads need one, and how the 4 zones, channel buffer, handoff, backpressure, and worker states work.
+order: 1
+stage: System Design
 ---
 
-The picture shows one Go program. Each zone has a number and a line of Go code. Read the zones from left to right (or from top to bottom on a phone).
+A **worker pool** is a system-design pattern that processes background work at a safe, steady speed. Instead of starting a new worker for every incoming request, a fixed team of **workers** takes **jobs** one at a time from a shared waiting line (**channel buffer**).
 
-## The four zones
+You do not need to know Go to read this lesson. Every part of the interactive **picture** on the **Overview** page follows these rules.
 
-| Zone | Go code | What it means |
-| --- | --- | --- |
-| 01 Producer | `jobs <- job` | One goroutine sends jobs into the channel. |
-| 02 Channel | `jobs := make(chan Job, N)` | A first-in, first-out channel with N buffer slots. |
-| 03 Workers | `go worker(id, jobs, results)` | A fixed number of goroutines. Each one runs `for job := range jobs`. |
-| 04 Results | `results <- Result{}` | Each worker sends one result for each job. |
+## Why systems need a worker pool
 
-## Channel rules the picture follows
+Imagine an application where customers upload photos, trigger webhooks, and request email receipts:
 
-The rules come from the Go runtime (`runtime/chan.go`).
+- If you run jobs **one by one (Sequential)**, a single slow upload blocks 99 quick emails behind it.
+- If you run jobs **all at once (Unbounded)**, a sudden burst of 1,000 requests starts 1,000 tasks at the same moment. Memory spikes, CPU cores thrash, and the database runs out of connections.
+- With a **worker pool**, you choose the concurrency limit up front — for example, **3 workers** and a **buffer of 6 slots**. At most 3 jobs run at once, up to 6 extra jobs wait in line, and the 10th job makes the sender wait (**backpressure**).
 
-1. A worker that waits on `<-jobs` is **parked**. It uses no CPU.
-2. When a parked worker exists, a send goes **directly** to that worker. The job skips the buffer.
-3. When no worker waits and the buffer has space, the job goes to the **tail** of the buffer.
-4. When the buffer is full, the sender **blocks**. The picture shows the blocked job in the producer outlet, with a dashed amber border.
-5. When a worker receives from a full buffer, it takes the **front** job. The blocked job then moves into the tail.
+## Which workloads fit a worker pool?
 
-Thus an idle worker never sits next to a non-empty buffer. If you see this in real code, the worker is not really waiting on the channel.
+Each **job packet** in the picture carries one of four **job types**. Each job type stands for a real engineering workload:
 
-## Buffer slots
+| Job type | Workload kind | Work time | Why a worker pool helps |
+| --- | --- | --- | --- |
+| `EMAIL` | **I/O-bound network work** | `1s–2s` | Workers spend most of their time waiting on the mail server. Running a few in parallel multiplies throughput without flooding SMTP limits. |
+| `WEBHOOK` | **I/O-bound HTTP calls** | `1s–3s` | Customer endpoints can be slow or return `HTTP 503`. Bounding active calls keeps slow endpoints from exhausting local sockets. |
+| `IMG` | **CPU-bound work** | `3s–5s` | Resizing images uses heavy CPU and RAM. Matching worker count to CPU cores prevents memory exhaustion. |
+| `SYNC` | **Connection-limited work** | `2s–4s` | Databases permit only a small pool of concurrent connections. A fixed worker pool respects that ceiling. |
 
-Slots are numbered from the front. `Buffer [0]` is the front: the next job that a worker receives. It is on the right side, near the workers. New jobs enter at the left.
+## The four zones in the picture
 
-`cap(jobs)` is fixed when `make` runs. A new buffer size in the picture restarts the pool, because Go cannot resize a channel.
+Read the stage from left to right on desktop, or from top to bottom on a phone. Each zone has a number and the exact line of Go code it represents.
 
-With a buffer of 0, the channel is **unbuffered**. Each send waits until a worker receives it.
+| Zone | Everyday meaning | Go code | What happens here |
+| --- | --- | --- | --- |
+| **01 Producer** | The sender at the start of the belt | `jobs <- job` | One goroutine creates jobs and sends them into the channel. |
+| **02 Channel** | A conveyor belt with `N` waiting slots | `jobs := make(chan Job, N)` | Holds waiting jobs in first-in, first-out order. |
+| **03 Workers** | A fixed team of gopher clerks | `go worker(id, jobs, results)` | Up to 6 goroutines. Each worker runs `for job := range jobs` and takes one job at a time. |
+| **04 Results** | The finished outbox and error tray | `results <- Result{}` | Each worker sends one result (`Done` or `Failed`) after finishing a job. |
+
+```mermaid
+flowchart LR
+    %% diagram: pipeline
+    P["01 Producer\njobs <- job"]
+    Chan["02 Channel Buffer\nSlot [N-1] ... Slot [0]"]
+    Pool["03 Worker Pool\nWorkers 1..M"]
+    Out["04 Results\nDone / Failed"]
+    P --> Chan --> Pool --> Out
+```
+
+## Five channel rules the picture follows
+
+These rules come directly from the Go runtime (`runtime/chan.go`):
+
+1. **Idle workers use zero CPU.** A worker waiting on `<-jobs` is parked by the runtime until a job arrives.
+2. **Handoff skips the buffer.** When at least one worker is **Idle**, a **send** goes straight from the **producer** to that worker. The job packet does not stop in a buffer slot.
+3. **Busy workers fill the buffer from front to tail.** When all workers are **Busy** and the buffer has room, new jobs enter at the tail (`Slot [N-1]`) and shift toward the **front** (`Slot [0]`).
+4. **A full buffer triggers backpressure.** When all workers are **Busy** and every slot is full, the producer becomes **Blocked**. The picture shows the waiting job in the producer outlet with an amber border.
+5. **Receiving from a full buffer unblocks the producer in the same step.** When a worker finishes its job and takes `Slot [0]`, the remaining slots shift right and the blocked producer job moves into the tail slot immediately.
+
+Because of Rule 2, **an Idle worker never sits next to a non-empty buffer**. If a job is waiting in the buffer, every active worker is already busy.
+
+## Buffer slots and unbuffered mode
+
+Slots are numbered from the **front**. `Buffer [0]` is on the right side of the pipe, closest to the workers. The next worker to finish always takes `Buffer [0]`.
+
+The buffer size `cap(jobs)` is fixed when `make(chan Job, N)` runs. Moving the **Buffer** slider in the picture restarts the pool because Go cannot resize an existing channel.
+
+When you set **Buffer** to `0`, the channel is **unbuffered**: there are no waiting slots, so every send must wait for an **Idle** worker to receive it directly.
 
 ## Worker states
 
-| State | Gopher | Go meaning |
+Each worker card shows a Go **gopher** whose pose and pill reflect its current **worker state**:
+
+| Worker state | Gopher pose | Meaning |
 | --- | --- | --- |
-| Idle | Half-closed eyes, looks at the channel | Parked on `<-jobs`. |
-| Busy | Eyes open, hands up, progress meter fills | Runs the job. |
-| Timeout / Error | Wide eyes, coral flash, "!" mark | The attempt failed. The worker reports the result (Resilience mode). |
-| Offline | Grey and asleep | The goroutine is not started, or it exited. |
-| Draining | Busy, "Exits after this job" | You lowered the worker count. The worker stops after its current job. |
+| **Idle** | Half-closed eyes, looking at the channel | Parked on `<-jobs`, waiting for the next job. |
+| **Busy** | Eyes open, holding the job packet, meter filling | Running `process(ctx, job)`. |
+| **Alert** (`Timeout` / `Error`) | Wide eyes, coral flash, `!` mark | The attempt failed in **Resilience mode**. The worker reports the failure and is free for the next job. |
+| **Draining** | Busy pose with note `Exits after this job` | You lowered the **Workers** slider. The worker finishes its current job before exiting so work is never lost. |
+| **Offline** | Grey and asleep | The worker slot has no running goroutine. |
 
-## The job packet
+```mermaid
+stateDiagram-v2
+    %% diagram: states
+    [*] --> Offline
+    Offline --> Idle
+    Idle --> Busy
+    Busy --> Idle
+    Busy --> Alert
+    Alert --> Idle
+    Busy --> Draining
+    Draining --> Offline
+```
 
-Each job is one packet. The packet keeps its look in every zone.
+## Reading a job packet
 
-- **Type badge**: a color and an icon. EMAIL, WEBHOOK, IMG, or SYNC.
-- **ID**: the job number, for example 104.
-- **Work time**: how long the job needs, for example `4s`.
-- **Retry badge**: `r1/2` means retry 1 of 2. It shows only after a failed attempt.
+Every job is drawn as one **job packet** that keeps its identity from the producer all the way to the result tray:
 
-In a slot the packet is a small card. On a worker it is a row. In a tray it is a chip.
+- **Type badge**: color and icon for `EMAIL`, `WEBHOOK`, `IMG`, or `SYNC`.
+- **Job ID**: the job number, such as `Job 104`.
+- **Work time**: how long the job takes to finish, such as `4s`. Work time does not change between retries.
+- **Retry badge**: `r1/2` means retry 1 of 2. It appears only after a failed attempt in **Resilience mode**.
 
-## Presets
+## Four presets to compare
 
-| Preset | Look for |
+| Preset | What to observe |
 | --- | --- |
-| 1 Steady flow | Workers keep up. A parked worker takes each new job at once. |
-| 2 Backpressure | Two workers are too slow. The buffer fills. The producer blocks. |
-| 3 Timeout & retry | Resilience mode. Attempts that do not reply reach the deadline and retry after a backoff. |
-| 4 Drain & idle | No new jobs. Workers empty the buffer, then park on `<-jobs`. |
+| **1 Steady flow** | Three workers keep up with incoming work. Watch jobs hand off directly to idle workers. |
+| **2 Backpressure** | Two workers are slower than the producer. All 6 slots fill, `FULL` appears, and the producer blocks. |
+| **3 Timeout & retry** | **Resilience mode** is on. Slow attempts hit the context deadline, flash **Alert**, wait in **Retry backoff**, and try again. |
+| **4 Drain & idle** | Auto-send is off. Workers empty the buffer from `Slot [0]`, then park in **Idle**. |
 
-## What the picture makes simple
+## What the picture simplifies
 
-- Time moves in steps of 0.05 seconds. Real goroutines do not move in steps.
-- The producer holds at most one blocked job, because it is one goroutine.
-- When two parked workers can receive, the worker that waited longest gets the job. Go also keeps parked receivers in arrival order, but you must not depend on this order in your code.
-- A worker that times out shows the alert for 0.7 seconds. This is the time to report `Result{Err}`. Real code is faster.
+- The picture clock moves in `0.05s` ticks (`Step` advances by `0.5s`). Real OS and Go schedulers run continuously.
+- The picture has one producer goroutine, so at most one job is blocked in the outlet at a time.
+- When a worker hits a timeout or transient error, the card flashes **Alert** for `0.7s` so your eye can see it before the packet moves to **Retry backoff** or **Failed**.
