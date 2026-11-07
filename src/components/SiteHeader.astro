@@ -2,11 +2,11 @@
 import { sitePath } from '../lib/site-path';
 
 const links = [
-	{ href: sitePath(), label: 'Picture' },
-	{ href: sitePath('lessons/setup/'), label: 'Setup' },
-	{ href: sitePath('lessons/design/'), label: 'Design' },
-	{ href: sitePath('lessons/syntax/'), label: 'Syntax' },
+	{ href: sitePath(), label: 'Overview' },
+	{ href: sitePath('lessons/design/'), label: 'Concepts' },
 	{ href: sitePath('lessons/resilience/'), label: 'Resilience' },
+	{ href: sitePath('lessons/syntax/'), label: 'Go Syntax' },
+	{ href: sitePath('lessons/setup/'), label: 'Build It' },
 ];
 
 const normalize = (path: string) => (path.endsWith('/') ? path : `${path}/`);
