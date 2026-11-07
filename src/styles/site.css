@@ -19,6 +19,7 @@
 html {
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
+	overflow-x: clip;
 }
 
 html,
@@ -260,14 +261,20 @@ pre {
 	transform: none;
 }
 
-.theme-button {
+.header-tools {
 	grid-area: toggle;
+	display: flex;
+	align-items: center;
+}
+
+.header-tool {
 	display: inline-grid;
 	place-items: center;
 	width: var(--hit-target);
 	height: var(--hit-target);
 	padding: 0;
 	color: var(--ink);
+	text-decoration: none;
 	background-color: transparent;
 	border: 1px solid transparent;
 	border-radius: var(--radius-md);
@@ -278,7 +285,13 @@ pre {
 		border-color var(--duration-fast) var(--ease-out);
 }
 
-.theme-button:active {
+.github-mark {
+	width: 20px;
+	height: 20px;
+	fill: currentColor;
+}
+
+.header-tool:active {
 	transform: scale(0.97);
 }
 
@@ -305,7 +318,7 @@ html[data-theme='dark'] .theme-button .icon-moon {
 		background-color: var(--bg-inset);
 	}
 
-	.theme-button:hover {
+	.header-tool:hover {
 		border-color: var(--line);
 	}
 
@@ -547,7 +560,28 @@ html[data-theme='dark'] .prose .astro-code span {
 
 .pool {
 	container: pool / inline-size;
+	position: relative;
+	isolation: isolate;
 	--zone-gap: var(--space-6);
+	margin-top: calc(-1 * var(--space-4));
+	padding-top: var(--space-4);
+}
+
+/* The grid is the section background. It runs past the column to the viewport edges. */
+.pool::before {
+	content: '';
+	position: absolute;
+	z-index: -1;
+	top: 0;
+	bottom: 0;
+	left: calc(50% - 50vw);
+	right: calc(50% - 50vw);
+	background-color: var(--bg-stage);
+	background-image:
+		linear-gradient(var(--grid-line) 1px, transparent 1px),
+		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+	background-size: 24px 24px;
+	background-position: -1px -1px;
 }
 
 .pool-layout {
@@ -557,13 +591,8 @@ html[data-theme='dark'] .prose .astro-code span {
 }
 
 .stage-grid {
-	background-color: var(--bg-stage);
-	background-image:
-		linear-gradient(var(--grid-line) 1px, transparent 1px),
-		linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-	background-size: 24px 24px;
-	background-position: -1px -1px;
-	border: 1px solid var(--line);
+	min-width: 0;
+	border: 0;
 	border-radius: 0;
 	overflow: clip;
 }
@@ -2124,8 +2153,8 @@ html[data-theme='dark'] .prose .astro-code span {
 	flex-direction: column;
 	gap: var(--space-2);
 	min-width: 0;
-	margin-top: -1px;
-	padding: var(--space-2) var(--space-3);
+	margin: -1px calc(-1 * var(--gutter)) 0;
+	padding: var(--space-2) calc(var(--gutter) + var(--space-3));
 	background-color: var(--bg-panel);
 	border: 1px solid var(--line);
 	border-radius: 0;
@@ -2194,12 +2223,14 @@ html[data-theme='dark'] .prose .astro-code span {
 .event-log {
 	position: relative;
 	display: grid;
-	flex: 1 1 auto;
+	flex: none;
 	align-items: center;
 	min-width: 0;
+	max-width: 100%;
 	min-height: 1.5em;
 	margin: 0;
 	padding: 0;
+	overflow: hidden;
 	list-style: none;
 	font-family: var(--font-mono);
 	font-size: var(--text-xs);
@@ -2211,6 +2242,8 @@ html[data-theme='dark'] .prose .astro-code span {
 	display: flex;
 	gap: var(--space-2);
 	min-width: 0;
+	max-width: 100%;
+	overflow: hidden;
 	grid-area: 1 / 1;
 }
 
@@ -2228,6 +2261,7 @@ html[data-theme='dark'] .prose .astro-code span {
 
 .event-log li:first-child {
 	color: var(--ink);
+	overflow: hidden;
 }
 
 .event-log time {
@@ -2237,6 +2271,8 @@ html[data-theme='dark'] .prose .astro-code span {
 }
 
 .event-log span {
+	display: block;
+	flex: 1 1 auto;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -2271,16 +2307,27 @@ html[data-theme='dark'] .prose .astro-code span {
 }
 
 .status-panel {
+	position: absolute;
+	right: 0;
+	bottom: calc(100% + var(--space-2));
+	z-index: 1;
 	display: flex;
 	flex-direction: column;
 	gap: var(--space-3);
+	width: min(24rem, calc(100vw - var(--space-8)));
+	max-height: min(24rem, 70vh);
 	min-width: 0;
-	margin-inline: calc(-1 * var(--gutter));
-	padding: var(--space-3) var(--gutter);
+	margin: 0;
+	padding: var(--space-3);
+	overflow: auto;
 	background-color: var(--bg-panel);
-	border: 0;
-	border-bottom: 1px solid var(--line);
-	border-radius: 0;
+	border: 1px solid var(--line);
+	border-radius: var(--radius-lg);
+	box-shadow: var(--shadow-2);
+}
+
+#panel-presets {
+	width: min(40rem, calc(100vw - var(--space-8)));
 }
 
 .status-panel[hidden] {
@@ -2342,11 +2389,19 @@ html[data-theme='dark'] .prose .astro-code span {
 	padding: 0 var(--space-2);
 }
 
+.run-cluster .btn-step {
+	display: none;
+}
+
 .trigger-cluster {
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 	min-width: 0;
 	border-top: 1px solid var(--line);
+}
+
+.bar-pop {
+	min-width: 0;
 }
 
 .bar-trigger {
@@ -2580,55 +2635,46 @@ html[data-theme='dark'] .prose .astro-code span {
 	}
 }
 
-/* Medium: readout strip over the run and trigger strip. One panel at a time sits above both. */
+/* From 40rem the readout is its own strip, so the event line can use the leftover width. */
 @container pool (min-width: 40rem) {
-	.pool-layout {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
-		grid-template-areas:
-			'stage'
-			'panel'
-			'readout'
-			'controls';
-	}
-
-	.stage-grid {
-		grid-area: stage;
-	}
-
 	.status-dock {
-		display: contents;
-	}
-
-	.status-panel {
-		grid-area: panel;
-		margin: -1px 0 0;
-		padding: var(--space-3) var(--space-4);
+		position: relative;
+		bottom: auto;
+		z-index: var(--z-sticky);
+		margin: -1px calc(-1 * var(--gutter)) 0;
+		padding: 0 var(--gutter);
 		border: 1px solid var(--line);
+		border-radius: 0;
+		box-shadow: none;
 	}
 
 	.status-readout {
-		grid-area: readout;
 		flex-direction: row;
+		flex-wrap: wrap;
 		align-items: center;
+		gap: var(--space-3);
+	}
+
+	.event-log {
+		flex: 1 1 16rem;
+	}
+
+	.tiles {
+		flex: none;
+		width: auto;
 	}
 
 	.status-controls {
-		grid-area: controls;
 		flex-direction: row;
 		align-items: center;
 		justify-content: space-between;
-		gap: var(--space-2);
-		margin-top: -1px;
+		gap: var(--space-3);
 		padding: var(--space-1) var(--space-2);
-		background-color: var(--bg-panel);
-		border: 1px solid var(--line);
-		border-radius: 0;
 	}
 
 	.run-cluster {
 		flex: none;
-		gap: var(--space-1);
+		gap: var(--space-2);
 		padding-block: 0;
 	}
 
@@ -2637,17 +2683,31 @@ html[data-theme='dark'] .prose .astro-code span {
 	}
 
 	.trigger-cluster {
+		position: relative;
 		display: flex;
-		flex: 1 1 auto;
+		flex: none;
 		justify-content: flex-end;
 		border-top: 0;
 	}
 
 	.bar-trigger {
 		width: auto;
-		flex: 1 1 0;
-		max-width: none;
-		min-width: 0;
+		flex: none;
+		padding-right: var(--space-2);
+		grid-template-columns: auto auto auto;
+		grid-template-areas: 'name summary chevron';
+		column-gap: var(--space-2);
+	}
+
+	.bar-summary {
+		width: auto;
+	}
+
+	.bar-chevron {
+		position: static;
+		top: auto;
+		right: auto;
+		margin-top: 0;
 	}
 
 	.panel-fields {
@@ -2659,67 +2719,19 @@ html[data-theme='dark'] .prose .astro-code span {
 	}
 }
 
-/* Wide: one flat row. Run, readout, then Presets, Pool, and Context. */
 @container pool (min-width: 75rem) {
-	.pool-layout {
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		grid-template-areas:
-			'stage stage stage'
-			'panel panel panel'
-			'run readout triggers';
-		align-items: stretch;
-	}
-
-	.status-controls {
-		display: contents;
-	}
-
-	.run-cluster {
-		grid-area: run;
-		gap: var(--space-2);
-		margin-top: -1px;
-		padding: var(--space-1) var(--space-3);
-		background-color: var(--bg-panel);
-		border-top: 1px solid var(--line);
-		border-bottom: 1px solid var(--line);
-		border-left: 1px solid var(--line);
-	}
-
-	.status-readout {
-		grid-area: readout;
-		border-right: 0;
-		border-left: 0;
-	}
-
-	.trigger-cluster {
-		grid-area: triggers;
-		flex: none;
-		margin-top: -1px;
-		padding: var(--space-1) var(--space-2);
-		background-color: var(--bg-panel);
-		border-top: 1px solid var(--line);
-		border-right: 1px solid var(--line);
-		border-bottom: 1px solid var(--line);
-	}
-
-	.bar-trigger {
-		flex: 0 1 auto;
-		max-width: 18rem;
-		padding-right: var(--space-2);
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		grid-template-areas: 'name summary chevron';
-		column-gap: var(--space-2);
-	}
-
-	.bar-chevron {
-		position: static;
-		top: auto;
-		right: auto;
-		margin-top: 0;
-	}
-
 	.preset-grid {
 		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+}
+
+@container pool (max-width: 39.99rem) {
+	.status-panel,
+	#panel-presets {
+		left: var(--space-2);
+		right: var(--space-2);
+		width: auto;
+		transform: none;
 	}
 }
 

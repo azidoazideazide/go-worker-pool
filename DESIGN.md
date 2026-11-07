@@ -12,8 +12,8 @@ This document is the source of truth for all visual decisions on the site. `src/
 The site is a precision Go runtime telemetry board with a light nautical-technical feel. It is calm and exact like a Linear or Figma diagram. The Go gophers make it friendly.
 
 - The home page keeps the interactive picture in the first screen (above the fold) as two flat parts:
-  1. **Stage grid**: the stage head and the four numbered zones share one schematic grid (`--bg-stage` and 24px `--grid-line`). There is no rounded card around the picture.
-  2. **Status bar**: one flat strip under the stage. It holds the readout and the controls. Run, Step, Reset, and the clock stay on the bar. Presets, Pool, and Context open from buttons on the bar.
+  1. **Stage grid**: the schematic grid (`--bg-stage` and 24px `--grid-line`) is the background of the picture section and runs to the viewport edges. It stops at the status bar. The page color does not frame the stage. The stage head and the four numbered zones sit on that grid. There is no border and no rounded card around the picture.
+  2. **Status bar**: one flat strip under the stage. It holds the readout and the controls. Run, Reset, and the clock stay on the bar. Presets, Pool, and Context open from buttons on the bar, each on a layer above the bar.
 - Below the status bar on the home page, a modular tutorial section (`HomeTutorial.astro`) introduces what a worker pool is, compares **Sequential**, **Unbounded**, and **Worker pool** execution in one diagram (12 jobs, the picture's default 3 workers and buffer of 6), maps the four zones, and links to the four presets and lessons.
 - The picture is the hero in the first view. Do not put a marketing hero above it.
 - Inside the stage head, one short hint line is permitted, above the zones. The hint changes with the preset.
@@ -46,9 +46,9 @@ The pool uses a CSS container query (`container: pool`). It does not use viewpor
 
 | Pool width | Layout |
 | :--- | :--- |
-| `< 40rem` (phones, `390px`) | One column. The zones stack from top to bottom. Lane arrows point down. The readout stays directly under the stage. The control strip (Run, Step, Reset, the clock, and the Presets, Pool, and Context buttons) sticks to the bottom of the viewport. An open panel docks above that strip. |
-| `40rem` to `75rem` (`768px`, `1024px`) | Two by two grid: Producer and Channel on row 1, Workers and Results on row 2. The status bar is two strips: readout on top, Run and the Presets, Pool, and Context buttons below. |
-| `>= 75rem` (`1440px`) | Four columns: `11rem 1fr 1.2fr 11.5rem`. The status bar is one row: Run, readout, then Presets, Pool, and Context. |
+| `< 40rem` (phones, `390px`) | One column. The zones stack from top to bottom. Lane arrows point down. The readout stays directly under the stage. The control strip (Run, Reset, the clock, and the Presets, Pool, and Context buttons) sticks to the bottom of the viewport. An open panel floats above that strip. |
+| `40rem` to `75rem` (`768px`, `1024px`) | Two by two grid: Producer and Channel on row 1, Workers and Results on row 2. The status bar is two strips: the readout on top, then Run and the Presets, Pool, and Context buttons. |
+| `>= 75rem` (`1440px`) | Four columns: `11rem 1fr 1.2fr 11.5rem`. The status bar stays two strips, so the event line keeps the leftover width of the readout. |
 
 - Worker cards use three columns when the workers zone is `26rem` or wider. Below that, they use two columns.
 - The buffer slots use a second container query (`container: slot`). A slot narrower than `3.5rem` shows a compact packet.
@@ -138,7 +138,7 @@ The palette starts from the Go brand colors: Gopher Blue `#00ADD8`, Light Blue `
 | Token | Role | Light (`[data-theme="light"]`) | Dark (`[data-theme="dark"]`) |
 | :--- | :--- | :--- | :--- |
 | `--shadow-1` | Resting cards (hairline-first, very soft) | `0 1px 2px rgb(15 23 42 / 0.06), 0 1px 1px rgb(15 23 42 / 0.04)` | `0 1px 2px rgb(0 0 0 / 0.35)` |
-| `--shadow-2` | Lifted elements: a job packet in flight and the sticky phone control strip | `0 8px 20px -10px rgb(15 23 42 / 0.28), 0 2px 4px -2px rgb(15 23 42 / 0.08)` | `0 10px 24px -12px rgb(0 0 0 / 0.7), 0 2px 4px -2px rgb(0 0 0 / 0.4)` |
+| `--shadow-2` | Lifted elements: a job packet in flight, the sticky phone control strip, and an open Presets, Pool, or Context panel | `0 8px 20px -10px rgb(15 23 42 / 0.28), 0 2px 4px -2px rgb(15 23 42 / 0.08)` | `0 10px 24px -12px rgb(0 0 0 / 0.7), 0 2px 4px -2px rgb(0 0 0 / 0.4)` |
 | `--selection` | Text selection highlight | `rgb(0 173 216 / 0.22)` | `rgb(93 201 226 / 0.3)` |
 
 **Derived tints** (defined once in `:root`, they follow the theme):
@@ -215,7 +215,7 @@ Base unit: `4px` (`0.25rem`).
 - `--radius-lg` (`0.5rem`): zone cards, the channel pipe, worker cards, preset cards, and code blocks.
 - `--radius-xl` (`0.75rem`): the largest step on the radius scale. The stage grid and the status bar use square corners (`border-radius: 0`).
 - `--radius-pill` (`999px`): chips in trays, the switch, progress meters, and lane arrows.
-- Structure comes from `1px solid var(--line)` hairlines. The stage grid and the status bar are flat. Use `--shadow-1` for resting cards inside the stage. Use `--shadow-2` only for lifted things: a job packet in flight and the sticky phone control strip.
+- Structure comes from `1px solid var(--line)` hairlines. The stage grid and the status bar are flat. Use `--shadow-1` for resting cards inside the stage. Use `--shadow-2` for a job packet in flight, the sticky phone control strip, and an open Presets, Pool, or Context panel.
 - `--z-flight` (`20`): the flight layer. `--z-sticky` (`30`): the sticky phone control strip.
 - Do not use glassmorphism, `backdrop-filter` blur cards, or neon glow.
 
@@ -272,19 +272,19 @@ Each worker is a goroutine. Its card shows an SVG Go gopher. The gopher is based
 The readout sits on the status bar under the stage.
 
 - Tiles: `len(jobs)`, `busy`, and `done`. Resilience mode adds `retried`, `timed out`, and `failed`. The tiles are flat cells divided by hairlines.
-- The event log keeps the recent events in the list and shows the newest one on a single line. The line does not change the height of the bar.
+- The event log keeps the recent events in the list and shows the newest one on a single line. The line uses `text-overflow: ellipsis`, so a long event does not change the height of the bar.
 - A visually hidden `aria-live="polite"` announcer reads the result of each control action: preset loaded, send result (for example `blocked`), step result, run or pause, mode change, and buffer change. It does not read every event while the picture runs, because that is too much noise.
 
 ### 7.6 Controls
 
 The controls sit on the same status bar.
 
-- **Run**: Run or Pause, Step (`+0.5s`), Reset, and the model clock `t = 0.0s` stay visible on the bar.
-- **Presets**, **Pool**, and **Context** are buttons on the bar. Each shows a short summary (for example `1 Steady flow`, `3w · cap 6`, `ctx 4s`). The button opens one flat panel. Opening a panel closes the other panels. Escape, a second click on the button, or a click outside closes it and Escape returns focus to the button. Keys `1` to `4` still select presets while the panel is closed.
+- **Run**: Run or Pause, Reset, and the model clock `t = 0.0s` stay visible on the bar. Step is not shown.
+- **Presets**, **Pool**, and **Context** are buttons on the bar. Each shows a short summary (for example `1 Steady flow`, `3w · cap 6`, `ctx 4s`). The button opens one panel on a layer above the bar. Opening a panel closes the other panels. Escape, a second click on the button, or a click outside closes it and Escape returns focus to the button. Keys `1` to `4` still select presets while the panel is closed.
 - **Pool** panel: Workers slider (`1` to `6`) and Buffer slider (`0` to `6`, `cap(jobs)`).
 - **Context** panel: `ctx timeout` slider and `Spike chance` slider. They are disabled in Core mode. The Context button stays clickable so the note can be read.
 - **Mode**: a two-part switch, `Core` and `Resilience`, in the stage head.
-- Below `40rem`, the readout stays under the stage and the control strip sticks to the bottom of the viewport. An open panel docks above that strip. The strip respects `env(safe-area-inset-bottom)`.
+- Below `40rem`, the readout stays under the stage and the control strip sticks to the bottom of the viewport. An open panel floats above that strip. The strip respects `env(safe-area-inset-bottom)`.
 
 ## 8. Motion
 
@@ -333,7 +333,7 @@ The controls sit on the same status bar.
 - The Auto-send control is `role="switch"` with `aria-checked`.
 - Presets and mode are native radio inputs, so arrow keys work.
 - Each packet has `role="img"` and a full `aria-label`, for example `Job 104, send email, 2 seconds, retry 1 of 2`.
-- Respect `env(safe-area-inset-bottom)` under the sticky phone control strip. An open Presets, Pool, or Context panel docks above that strip.
+- Respect `env(safe-area-inset-bottom)` under the sticky phone control strip. An open Presets, Pool, or Context panel floats above that strip.
 
 ## 10. Script Contract (Data Attributes)
 

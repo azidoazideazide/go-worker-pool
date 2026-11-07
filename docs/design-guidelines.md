@@ -95,7 +95,7 @@ Every text pair meets at least a `4.5:1` contrast ratio. See `DESIGN.md` section
 | Token | Role | Light (`[data-theme="light"]`) | Dark (`[data-theme="dark"]`) |
 | :--- | :--- | :--- | :--- |
 | `--shadow-1` | Resting cards (hairline-first, very soft) | `0 1px 2px rgb(15 23 42 / 0.06), 0 1px 1px rgb(15 23 42 / 0.04)` | `0 1px 2px rgb(0 0 0 / 0.35)` |
-| `--shadow-2` | Lifted elements: a job packet in flight and the sticky phone control strip | `0 8px 20px -10px rgb(15 23 42 / 0.28), 0 2px 4px -2px rgb(15 23 42 / 0.08)` | `0 10px 24px -12px rgb(0 0 0 / 0.7), 0 2px 4px -2px rgb(0 0 0 / 0.4)` |
+| `--shadow-2` | Lifted elements: a job packet in flight, the sticky phone control strip, and an open Presets, Pool, or Context panel | `0 8px 20px -10px rgb(15 23 42 / 0.28), 0 2px 4px -2px rgb(15 23 42 / 0.08)` | `0 10px 24px -12px rgb(0 0 0 / 0.7), 0 2px 4px -2px rgb(0 0 0 / 0.4)` |
 | `--selection` | Text selection highlight | `rgb(0 173 216 / 0.22)` | `rgb(93 201 226 / 0.3)` |
 
 **Derived tints**: `--state-busy-soft`, `--state-ok-soft`, `--state-alert-soft` (each `12%`), and `--state-warn-soft` (`14%`). Each is `color-mix(in srgb, var(--state-*) N%, transparent)`, so it follows the theme.
@@ -128,7 +128,7 @@ New tokens: `--bg-stage`, `--bg-inset`, `--bg-packet`, `--grid-line`, `--ink-fai
 - **Durations**: `--duration-fast` (`150ms`), `--duration-normal` (`200ms`), `--duration-shift` (`260ms`), `--duration-flight` (`420ms`), `--duration-alert` (`700ms`).
 - **Easings**: `--ease-out` (`cubic-bezier(0.23, 1, 0.32, 1)`), `--ease-in-out` (`cubic-bezier(0.77, 0, 0.175, 1)`), `--ease-spring` (`cubic-bezier(0.22, 1, 0.36, 1)`).
 - **Stacking**: `--z-flight` (`20`), `--z-sticky` (`30`).
-- **Elevation**: `--shadow-1` for resting cards inside the stage. `--shadow-2` only for a job packet in flight and the sticky phone control strip. The stage grid and the status bar are flat (`border-radius: 0`, no resting shadow).
+- **Elevation**: `--shadow-1` for resting cards inside the stage. `--shadow-2` for a job packet in flight, the sticky phone control strip, and an open Presets, Pool, or Context panel. The stage grid and the status bar are flat (`border-radius: 0`, no resting shadow).
 
 ## 5. Token Rules
 
@@ -140,10 +140,9 @@ New tokens: `--bg-stage`, `--bg-inset`, `--bg-packet`, `--grid-line`, `--ink-fai
 ## 6. Layout Rules
 
 - The pool uses container queries (`container: pool`): one column below `40rem`, a two by two grid from `40rem` to `75rem`, and four columns (`11rem 1fr 1.2fr 11.5rem`) from `75rem`.
-- The stage head and the stage share one schematic grid. The status bar under the stage is one flat strip: Run, Step, Reset, and the clock stay visible; Presets, Pool, and Context open from buttons.
-- Below `40rem`, the readout stays under the stage. The control strip sticks to the bottom of the viewport, respects `env(safe-area-inset-bottom)`, and docks an open panel above itself.
-- From `40rem` to `75rem`, the bar is two hairline strips: the readout on top, and Run plus the Presets, Pool, and Context buttons below.
-- From `75rem`, Run, the readout, and those buttons sit on one row.
+- The schematic grid is the background of the picture section and runs to the viewport edges. It stops at the status bar. The stage head and the stage sit on that grid. The status bar under the stage is two flat strips: the readout (counts and the recent-event line) on top, then Run, Reset, the clock, and the buttons for Presets, Pool, and Context. Those buttons open a panel on a layer above the bar.
+- Below `40rem`, the readout stays under the stage. The control strip sticks to the bottom of the viewport, respects `env(safe-area-inset-bottom)`, and floats an open panel above itself.
+- The event line keeps one line and uses text overflow, so a long event stays on that line.
 - No page may scroll horizontally at `390px`, `768px`, `1024px`, or `1440px`. Long code in a lesson scrolls inside its own `pre`.
 - Retry backoff stays in the Producer zone. Failed stays in the Results zone. Do not add columns for them.
 

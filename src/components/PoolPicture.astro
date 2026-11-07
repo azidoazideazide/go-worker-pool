@@ -310,62 +310,6 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 		</div>
 
 		<div class="status-dock">
-			<div id="panel-presets" class="status-panel" hidden aria-labelledby="panel-presets-title">
-				<h2 class="panel-title" id="panel-presets-title">Presets <small>keys 1–4</small></h2>
-				<div class="preset-grid">
-					{
-						presets.map((p) => (
-							<label class="preset">
-								<input type="radio" name="pool-preset" value={p.key} checked={p.key === DEFAULT_PRESET} />
-								<span class="preset-num" aria-hidden="true">{p.order}</span>
-								<span class="preset-name">{p.label}</span>
-								<span class="preset-meta">{presetMeta(p.key)}</span>
-							</label>
-						))
-					}
-				</div>
-			</div>
-
-			<div id="panel-pool" class="status-panel" hidden aria-labelledby="panel-pool-title">
-				<h2 class="panel-title" id="panel-pool-title">Pool</h2>
-				<div class="panel-fields">
-					<div class="field">
-						<label for="pool-workers">Workers</label>
-						<output for="pool-workers" data-out="workers">{initial.workers}</output>
-						<input id="pool-workers" type="range" min="1" max={MAX_WORKERS} step="1" value={initial.workers} data-input="workers" />
-					</div>
-					<div class="field">
-						<label for="pool-buffer">Buffer <code>cap(jobs)</code></label>
-						<output for="pool-buffer" data-out="buffer">{initial.capacity}</output>
-						<input id="pool-buffer" type="range" min="0" max={MAX_BUFFER} step="1" value={initial.capacity} data-input="buffer" />
-					</div>
-				</div>
-				<p class="panel-note">make() fixes the buffer size, so a new size restarts the pool.</p>
-			</div>
-
-			<div
-				id="panel-context"
-				class="status-panel"
-				hidden
-				aria-labelledby="panel-context-title"
-				data-disabled={initial.mode === 'core' ? 'true' : 'false'}
-			>
-				<h2 class="panel-title" id="panel-context-title">Context</h2>
-				<div class="panel-fields">
-					<div class="field">
-						<label for="pool-timeout">ctx timeout</label>
-						<output for="pool-timeout" data-out="timeout">{`${initial.timeoutSec}s`}</output>
-						<input id="pool-timeout" type="range" min="2" max="6" step="1" value={initial.timeoutSec} data-input="timeout" />
-					</div>
-					<div class="field">
-						<label for="pool-spike">Spike chance</label>
-						<output for="pool-spike" data-out="spike">{`${Math.round(initial.spikeChance * 100)}%`}</output>
-						<input id="pool-spike" type="range" min="0" max="50" step="5" value={Math.round(initial.spikeChance * 100)} data-input="spike" />
-					</div>
-				</div>
-				<p class="panel-note" data-context-note>Core mode has no deadlines. Switch to Resilience to use these.</p>
-			</div>
-
 			<div class="status-controls">
 				<div class="run-cluster">
 					<button type="button" class="btn btn-primary btn-run" data-action="run">
@@ -373,7 +317,7 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 						<svg class="icon icon-pause" aria-hidden="true"><use href="#pool-icon-pause"></use></svg>
 						<span data-run-text>Run</span>
 					</button>
-					<button type="button" class="btn" data-action="step" aria-label="Step 0.5 seconds">
+					<button type="button" class="btn btn-step" data-action="step" aria-label="Step 0.5 seconds" hidden>
 						<svg class="icon" aria-hidden="true"><use href="#pool-icon-step"></use></svg>
 						+0.5s
 					</button>
@@ -384,21 +328,80 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 					<span class="clock" data-clock>t = 0.0s</span>
 				</div>
 				<div class="trigger-cluster">
-					<button type="button" class="bar-trigger" data-panel-trigger="presets" aria-expanded="false" aria-controls="panel-presets">
-						<span class="bar-trigger-name">Presets</span>
-						<span class="bar-summary" data-summary="presets">{`${initial.order} ${initial.label}`}</span>
-						<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
-					</button>
-					<button type="button" class="bar-trigger" data-panel-trigger="pool" aria-expanded="false" aria-controls="panel-pool">
-						<span class="bar-trigger-name">Pool</span>
-						<span class="bar-summary" data-summary="pool">{`${initial.workers}w · cap ${initial.capacity}`}</span>
-						<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
-					</button>
-					<button type="button" class="bar-trigger" data-panel-trigger="context" aria-expanded="false" aria-controls="panel-context">
-						<span class="bar-trigger-name">Context</span>
-						<span class="bar-summary" data-summary="context">{`ctx ${initial.timeoutSec}s`}</span>
-						<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
-					</button>
+					<div class="bar-pop">
+						<div id="panel-presets" class="status-panel" hidden aria-labelledby="panel-presets-title">
+							<h2 class="panel-title" id="panel-presets-title">Presets <small>keys 1–4</small></h2>
+							<div class="preset-grid">
+								{
+									presets.map((p) => (
+										<label class="preset">
+											<input type="radio" name="pool-preset" value={p.key} checked={p.key === DEFAULT_PRESET} />
+											<span class="preset-num" aria-hidden="true">{p.order}</span>
+											<span class="preset-name">{p.label}</span>
+											<span class="preset-meta">{presetMeta(p.key)}</span>
+										</label>
+									))
+								}
+							</div>
+						</div>
+						<button type="button" class="bar-trigger" data-panel-trigger="presets" aria-expanded="false" aria-controls="panel-presets">
+							<span class="bar-trigger-name">Presets</span>
+							<span class="bar-summary" data-summary="presets">{`${initial.order} ${initial.label}`}</span>
+							<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
+						</button>
+					</div>
+					<div class="bar-pop">
+						<div id="panel-pool" class="status-panel" hidden aria-labelledby="panel-pool-title">
+							<h2 class="panel-title" id="panel-pool-title">Pool</h2>
+							<div class="panel-fields">
+								<div class="field">
+									<label for="pool-workers">Workers</label>
+									<output for="pool-workers" data-out="workers">{initial.workers}</output>
+									<input id="pool-workers" type="range" min="1" max={MAX_WORKERS} step="1" value={initial.workers} data-input="workers" />
+								</div>
+								<div class="field">
+									<label for="pool-buffer">Buffer <code>cap(jobs)</code></label>
+									<output for="pool-buffer" data-out="buffer">{initial.capacity}</output>
+									<input id="pool-buffer" type="range" min="0" max={MAX_BUFFER} step="1" value={initial.capacity} data-input="buffer" />
+								</div>
+							</div>
+							<p class="panel-note">make() fixes the buffer size, so a new size restarts the pool.</p>
+						</div>
+						<button type="button" class="bar-trigger" data-panel-trigger="pool" aria-expanded="false" aria-controls="panel-pool">
+							<span class="bar-trigger-name">Pool</span>
+							<span class="bar-summary" data-summary="pool">{`${initial.workers}w · cap ${initial.capacity}`}</span>
+							<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
+						</button>
+					</div>
+					<div class="bar-pop">
+						<div
+							id="panel-context"
+							class="status-panel"
+							hidden
+							aria-labelledby="panel-context-title"
+							data-disabled={initial.mode === 'core' ? 'true' : 'false'}
+						>
+							<h2 class="panel-title" id="panel-context-title">Context</h2>
+							<div class="panel-fields">
+								<div class="field">
+									<label for="pool-timeout">ctx timeout</label>
+									<output for="pool-timeout" data-out="timeout">{`${initial.timeoutSec}s`}</output>
+									<input id="pool-timeout" type="range" min="2" max="6" step="1" value={initial.timeoutSec} data-input="timeout" />
+								</div>
+								<div class="field">
+									<label for="pool-spike">Spike chance</label>
+									<output for="pool-spike" data-out="spike">{`${Math.round(initial.spikeChance * 100)}%`}</output>
+									<input id="pool-spike" type="range" min="0" max="50" step="5" value={Math.round(initial.spikeChance * 100)} data-input="spike" />
+								</div>
+							</div>
+							<p class="panel-note" data-context-note>Core mode has no deadlines. Switch to Resilience to use these.</p>
+						</div>
+						<button type="button" class="bar-trigger" data-panel-trigger="context" aria-expanded="false" aria-controls="panel-context">
+							<span class="bar-trigger-name">Context</span>
+							<span class="bar-summary" data-summary="context">{`ctx ${initial.timeoutSec}s`}</span>
+							<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>

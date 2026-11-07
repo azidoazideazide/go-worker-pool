@@ -38,3 +38,11 @@ Add your worker pool program in `processor/` as you work through the lessons.
     src/styles/             Go light and dark theme tokens and layout rules
     processor/              Standalone Go module for the worker pool
     docs/                   Design guidelines, ADR, and session notes
+
+## License
+
+Required Notice: Copyright 2026 azidoazideazide
+
+The lessons, the site, and the program are under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). The text is in `LICENSE`.
+
+Go gopher drawings are based on the Go gopher by Renée French and remain [CC BY 4.0](https://go.dev/doc/gopher/README).

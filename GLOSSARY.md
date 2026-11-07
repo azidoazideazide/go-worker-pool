@@ -185,7 +185,7 @@ The telemetry counts and the recent-event line on the status bar under the stage
 _Avoid_: dashboard, stats, HUD, metrics panel
 
 **Controls**:
-The controls on the status bar under the stage. Run, Step, Reset, and the clock stay on the bar. Presets, Pool, and Context open from buttons on the bar.
+The controls on the status bar under the stage. Run, Reset, and the clock stay on the bar. Presets, Pool, and Context open from buttons on the bar.
 _Avoid_: toolbar, settings, instrument bar
 
 **Preset**:
