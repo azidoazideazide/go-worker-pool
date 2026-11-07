@@ -224,6 +224,18 @@ _Avoid_: user, reader, audience
 The light or dark Go color palette applied to the site and the picture.
 _Avoid_: skin, mode (Mode is Core or Resilience)
 
+**Overview**:
+The home page of the site (`/`). It shows the interactive picture in the first view and a concise system-design tutorial below the controls.
+
+**Concepts**:
+The first lesson page (`/lessons/design/`). It explains what a worker pool is, why workloads need one, and how each zone of the picture works.
+
+**Sequential**:
+Processing one job at a time with one worker. Memory stays low, but a batch of jobs waits in a long line.
+
+**Unbounded**:
+Starting a new worker goroutine for every incoming job without a limit. A sudden spike can exhaust memory, CPU, or database connections.
+
 ## Relationships
 
 - A **Producer** sends **Jobs** into one **Channel**.

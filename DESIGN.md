@@ -11,15 +11,16 @@ This document is the source of truth for all visual decisions on the site. `src/
 
 The site is a precision Go runtime telemetry board with a light nautical-technical feel. It is calm and exact like a Linear or Figma diagram. The Go gophers make it friendly.
 
-- The home page has three regions. Keep them separate:
+- The home page keeps the interactive picture in the first screen (above the fold) with three regions:
   1. **Stage** (the picture): four numbered zones that show the pipeline.
   2. **Readout**: telemetry tiles and a short event log.
   3. **Controls**: decks for presets, run, pool size, and context.
-- The picture is the hero. Do not put a marketing hero above it.
-- Do not put a caption paragraph beneath the picture. One short hint line is permitted in the stage head, above the zones. The hint changes with the preset.
+- Below the controls on the home page, a modular tutorial section (`HomeTutorial.astro`) introduces what a worker pool is, compares **Sequential**, **Unbounded**, and **Worker pool** execution, maps the four zones, and links to the four presets and lessons.
+- The picture is the hero in the first view. Do not put a marketing hero above it.
+- Inside the picture frame, one short hint line is permitted in the stage head, above the zones. The hint changes with the preset.
 - Every label uses the words in `GLOSSARY.md`.
 - Each zone shows a small Go code caption, for example `jobs := make(chan Job, 6)`. The caption tells the visitor which Go line the zone shows.
-- Each lesson page uses a quiet reading column (`--reading-max`, `42rem`) with short Go snippets.
+- Each lesson page uses a quiet reading column (`--reading-max`, `42rem`) with short Go snippets and token-styled Mermaid schematic diagrams (`MermaidDiagram.astro`).
 
 ## 2. Layout
 

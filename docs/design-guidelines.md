@@ -4,12 +4,12 @@ This document gives the short rules for the visual system, the Go color tokens, 
 
 ## 1. Visual Direction
 
-- The home page is a precision Go runtime telemetry board. It has three separate regions: **Stage** (the picture), **Readout**, and **Controls**.
+- The home page is a precision Go runtime telemetry board in the first view. It has three separate regions in the picture (**Stage**, **Readout**, and **Controls**), followed by a modular system-design tutorial (`HomeTutorial.astro`) below the controls.
 - The stage shows four numbered zones: `01 Producer`, `02 Channel`, `03 Workers`, `04 Results`. Each zone has a Go code caption.
 - Each worker is an SVG Go gopher. Its pose shows the worker state.
 - Every label uses the words in `GLOSSARY.md`.
-- Do not put a caption paragraph beneath the picture. One hint line in the stage head is permitted.
-- Each lesson page uses a quiet reading column (`--reading-max`, `42rem`).
+- Inside the picture frame, one hint line in the stage head is permitted.
+- Each lesson page uses a quiet reading column (`--reading-max`, `42rem`) and may include token-styled Mermaid schematic diagrams (`MermaidDiagram.astro`).
 
 ## 2. Go Color Palette (Light Mode and Dark Mode)
 
