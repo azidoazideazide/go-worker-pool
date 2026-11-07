@@ -109,20 +109,31 @@ To respect all repository constraints (`No new npm dependencies unless asked`, `
 
 ## 6. Lesson Content Upgrades (Stage 1 $\rightarrow$ Stage 2)
 
+Informed by `romangurevitch/ConcurrencyWorkshop`, the content integrates four structured teaching patterns across Stage 1 and Stage 2:
+- **When & Why Workload Mapping**: Connect I/O-bound (`EMAIL`, `WEBHOOK`), CPU-bound (`IMG`), and connection/rate-limited (`SYNC`) workloads directly to the 4 job types in the interactive picture.
+- **Common Issues and Pitfalls (`Issue -> Solution -> In the Picture`)**: Show the 6 classic worker-pool pitfalls (too few workers / backpressure, too many workers / overload, unclosed channel deadlocks, goroutine leaks, silent errors, and retry self-deadlock) and how to observe them in the picture.
+- **Graceful Drain vs. Immediate Cancel**: Compare `for job := range jobs` (drains remaining buffer after `close(jobs)`) with `select` on `<-ctx.Done()` and `<-jobs` (aborts immediately on cancellation).
+- **5-Step Implementation Blueprint**: Structure the `processor/` guide around 5 sequential steps (1. Process function & types, 2. Producer & `jobs` channel, 3. Worker pool & `WaitGroup` closer, 4. Results consumer loop, 5. Context cancellation & race detector).
+
 1. **Lesson 1: `Concepts` (`src/content/lessons/design.md`, `order: 1`, `stage: "System Design"`)**:
    - Written for general readers first, then connected to Go runtime truth rules.
-   - Explains what a worker pool is, how the 4 zones work together, why a handoff skips the buffer, how buffer slots move from tail to front (`Buffer [0]`), why backpressure protects the system, and how worker states behave.
+   - Explains what a worker pool is, which workloads need one (mapping I/O-bound, CPU-bound, and rate-limited work to `EMAIL`, `WEBHOOK`, `IMG`, and `SYNC`), how the 4 zones work together, why a handoff skips the buffer, how buffer slots move from tail to front (`Buffer [0]`), why backpressure protects the system, and how worker states behave.
    - Embeds **Diagram 2 (`pipeline`)** and **Diagram 3 (`states`)**.
 2. **Lesson 2: `Resilience` (`src/content/lessons/resilience.md`, `order: 2`, `stage: "System Design"`)**:
    - Starts with a plain-English explanation of why jobs fail in production (slow webhooks, network blips, database resets) before showing the Go code.
-   - Explains the 4 protections: **Context deadline** (`Timeout`), **Transient error** filtering, **Retry backoff** with **Jitter**, and maximum **Attempts** leading to **Failed** (dead-letter queue), plus why workers must never send retries directly back into `jobs` (deadlock prevention).
+   - Explains the 4 protections: **Context deadline** (`Timeout`), **Transient error** filtering, **Retry backoff** with **Jitter**, and maximum **Attempts** leading to **Failed** (dead-letter queue).
+   - Includes the **Common Issues and Pitfalls** table (`Issue -> Solution -> See It in the Picture`) covering too few workers, too many workers, unclosed channels, goroutine leaks, silent failures, and retry self-deadlock.
    - Embeds **Diagram 4 (`resilience`)**.
 3. **Lesson 3: `Go Syntax` (`src/content/lessons/syntax.md`, `order: 3`, `stage: "Go Concurrency"`)**:
    - Bridges Stage 1 concepts into Go concurrency syntax for software engineers.
-   - Covers `go` goroutines, buffered vs. unbuffered channels (`len` and `cap`), blocking send/receive, channel direction (`<-chan`, `chan<-`), `for job := range jobs` and `close(jobs)`, `sync.WaitGroup` fan-in shutdown, and `select` with `ctx.Done()`.
+   - Covers `go` goroutines, buffered vs. unbuffered channels (`len` and `cap`), blocking send/receive, channel direction (`<-chan`, `chan<-`), `for job := range jobs` and `close(jobs)`, `sync.WaitGroup` fan-in shutdown, and `select` with `ctx.Done()` (including a side-by-side comparison of **Graceful Drain** with `range` vs. **Immediate Stop** with `select`).
 4. **Lesson 4: `Build It` (`src/content/lessons/setup.md`, `order: 4`, `stage: "Go Implementation"`)**:
-   - Hands-on guide to building and testing the companion Go program in `processor/`.
-   - Covers module setup, `Job` and `Result` types, wiring the worker pool in `main.go`, graceful shutdown with `signal.NotifyContext`, and verifying concurrency safety with `go test -race ./...`.
+   - Hands-on guide to building and testing the companion Go program in `processor/` using the **5-Step Blueprint**:
+     - Step 1: Define `Job`, `Result`, and `process(ctx, job)`
+     - Step 2: Create the `jobs` channel and the Producer (`defer close(jobs)`)
+     - Step 3: Start the Worker pool with `sync.WaitGroup` and close `results`
+     - Step 4: Collect `Result` values (`for r := range results`)
+     - Step 5: Handle `context.Context` cancellation (`signal.NotifyContext`) and test with `go test -race ./...`.
 
 ---
 
