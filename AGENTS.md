@@ -13,13 +13,13 @@ This repository publishes a static lesson site about a Go worker pool to GitHub 
 
 ## Structure
 
-- `DESIGN.md` and `docs/design-guidelines.md` — visual system, Go color tokens, spacing scale, and accessibility rules
+- `DESIGN.md` and `docs/design-guidelines.md` — visual system, Go color tokens, layout, motion, accessibility, and Go runtime truth rules for the picture
 - `GLOSSARY.md` — required domain words for all headings, UI labels, and lessons
 - `src/pages/` — static Astro routes (`index.astro`, `lessons/[slug].astro`)
 - `src/layouts/` — page layouts (`Base.astro`)
-- `src/components/` — reusable UI components (`SiteHeader.astro`, `PoolPicture.astro`)
-- `src/content/lessons/` — Markdown lesson files (`setup.md`, `syntax.md`, `design.md`)
-- `src/lib/` — shared TypeScript helpers (`site-path.ts`, `pool-presets.ts`)
+- `src/components/` — reusable UI components (`SiteHeader.astro`, `PoolPicture.astro`). `PoolPicture.astro` draws the stage, readout, and controls and runs the client script.
+- `src/content/lessons/` — Markdown lesson files (`setup.md`, `design.md`, `syntax.md`, `resilience.md`), sorted by the `order` front matter field
+- `src/lib/` — shared TypeScript helpers: `site-path.ts`, `pool-presets.ts` (job types, limits, and the four presets), and `pool-engine.ts` (pure model of the pool, with no DOM access)
 - `src/styles/tokens.css` — all design tokens exposed as CSS custom properties
 - `src/styles/site.css` — site layout and component styles consuming `tokens.css`
 - `processor/` — standalone companion Go module
@@ -37,6 +37,8 @@ This repository publishes a static lesson site about a Go worker pool to GitHub 
 - Use only the design tokens defined in `DESIGN.md` and exposed as CSS custom properties in `src/styles/tokens.css`.
 - Never invent new hex colors, arbitrary spacing, or new font families outside `src/styles/tokens.css`.
 - Add client JavaScript only on the page or component that needs it.
+- Keep `src/lib/pool-engine.ts` free of DOM access. The picture must follow the Go channel rules in `docs/design-guidelines.md` section 9. In dev mode, the picture logs a warning when `checkInvariants()` finds a false state.
+- Do not write `#` followed by 3 to 8 hex characters anywhere in `src/` outside `src/styles/tokens.css`, also not in comments or Markdown. Write "Job 104" in static text.
 - Do not introduce new dependencies unless explicitly asked.
 - Run `pnpm check:tokens` and `pnpm build` after every frontend change.
 

@@ -18,7 +18,7 @@ const mainClass = layout === 'full' ? 'layout-full' : 'layout-lesson';
 		<meta charset="utf-8" />
 		<link rel="icon" type="image/svg+xml" href={sitePath('favicon.svg')} />
 		<link rel="icon" href={sitePath('favicon.ico')} />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="description" content={description} />
 		<meta name="generator" content={Astro.generator} />
 		<title>{title}</title>
@@ -32,9 +32,19 @@ const mainClass = layout === 'full' ? 'layout-full' : 'layout-lesson';
 		</script>
 	</head>
 	<body>
+		<a class="skip-link" href="#main">Skip to content</a>
 		<SiteHeader />
-		<main class={mainClass}>
+		<main id="main" class={mainClass}>
 			<slot />
 		</main>
+		<footer class="site-footer">
+			<div class="site-footer-inner">
+				<p>
+					Gopher drawings are based on the Go gopher by Renée French,{' '}
+					<a href="https://go.dev/doc/gopher/README" rel="noopener">CC BY 4.0</a>.
+				</p>
+				<p>Static site. The picture models the pool in your browser. It does not call the Go program.</p>
+			</div>
+		</footer>
 	</body>
 </html>

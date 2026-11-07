@@ -1,31 +1,154 @@
+/*
+ * Design tokens for the Go worker pool site.
+ * This is the ONLY file in src/ that may contain raw hex colors (`pnpm check:tokens`).
+ * Every token is documented in DESIGN.md and docs/design-guidelines.md.
+ */
+
 :root,
 html[data-theme='light'] {
 	color-scheme: light;
 
-	/* Semantic Go Colors (Light) */
+	/* Surfaces */
 	--bg-paper: #f4f8fa;
 	--bg-panel: #ffffff;
+	--bg-stage: #f7fafc;
+	--bg-inset: #eef4f7;
 	--bg-channel: #dceff5;
 	--bg-slot: #edf7fa;
+	--bg-packet: #ffffff;
+	--grid-line: #e4edf2;
+
+	/* Ink and lines */
 	--ink: #0f172a;
 	--ink-muted: #475569;
+	--ink-faint: #526175;
 	--line: #cbd5e1;
+	--line-strong: #94a3b8;
+
+	/* Go brand */
 	--go-blue: #006e9c;
 	--go-cyan: #00add8;
 	--go-cyan-ink: #082f49;
-	--job-cyan: #007d9c;
-	--job-cyan-ink: #ffffff;
-	--job-coral: #ce3262;
-	--job-coral-ink: #ffffff;
-	--job-amber: #b45309;
-	--job-amber-ink: #ffffff;
-	--worker-busy: #007d9c;
-	--worker-idle: #64748b;
+
+	/* Job types (badge fill + icon ink) */
+	--job-email: #00add8;
+	--job-email-ink: #082f49;
+	--job-webhook: #7c5cc4;
+	--job-webhook-ink: #ffffff;
+	--job-image: #fddd00;
+	--job-image-ink: #0f172a;
+	--job-sync: #00a29c;
+	--job-sync-ink: #022c29;
+
+	/* Worker and pipeline states */
+	--state-busy: #00657f;
+	--state-idle: #526175;
+	--state-ok: #136c34;
+	--state-alert: #b0254f;
+	--state-warn: #8f4205;
+	--state-off: #94a3b8;
+
+	/* Progress meter */
 	--progress-track: #e2e8f0;
+	--progress-fill: #00add8;
+
+	/* Gopher drawing (worker goroutine) */
+	--gopher-fur: #6ad7e5;
+	--gopher-fur-shade: #3fb6c9;
+	--gopher-snout: #f6d2a2;
+	--gopher-nose: #5b3a29;
+	--gopher-eye: #ffffff;
+	--gopher-pupil: #0f172a;
+	--gopher-line: #0f172a;
+	--gopher-off: #cbd5e1;
+
+	/* Elevation (hairline-first, no heavy shadows) */
+	--shadow-1: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 1px rgb(15 23 42 / 0.04);
+	--shadow-2: 0 8px 20px -10px rgb(15 23 42 / 0.28), 0 2px 4px -2px rgb(15 23 42 / 0.08);
+	--selection: rgb(0 173 216 / 0.22);
+}
+
+html[data-theme='dark'] {
+	color-scheme: dark;
+
+	/* Surfaces */
+	--bg-paper: #0b131e;
+	--bg-panel: #132030;
+	--bg-stage: #0e1824;
+	--bg-inset: #0f1b29;
+	--bg-channel: #0f293a;
+	--bg-slot: #16354b;
+	--bg-packet: #1a2d42;
+	--grid-line: #152434;
+
+	/* Ink and lines */
+	--ink: #f1f5f9;
+	--ink-muted: #a3b2c4;
+	--ink-faint: #8b9bb0;
+	--line: #263b52;
+	--line-strong: #3d5a78;
+
+	/* Go brand */
+	--go-blue: #5dc9e2;
+	--go-cyan: #00add8;
+	--go-cyan-ink: #082f49;
+
+	/* Job types */
+	--job-email: #00add8;
+	--job-email-ink: #082f49;
+	--job-webhook: #a78bfa;
+	--job-webhook-ink: #1e1336;
+	--job-image: #fddd00;
+	--job-image-ink: #0f172a;
+	--job-sync: #00c4b3;
+	--job-sync-ink: #022c29;
+
+	/* Worker and pipeline states */
+	--state-busy: #22c3e6;
+	--state-idle: #94a3b8;
+	--state-ok: #4ade80;
+	--state-alert: #fb7185;
+	--state-warn: #fbbf24;
+	--state-off: #475569;
+
+	/* Progress meter */
+	--progress-track: #1e2f42;
+	--progress-fill: #00add8;
+
+	/* Gopher drawing */
+	--gopher-fur: #6ad7e5;
+	--gopher-fur-shade: #3fb6c9;
+	--gopher-snout: #f6d2a2;
+	--gopher-nose: #5b3a29;
+	--gopher-eye: #ffffff;
+	--gopher-pupil: #0b131e;
+	--gopher-line: #0b131e;
+	--gopher-off: #334155;
+
+	/* Elevation */
+	--shadow-1: 0 1px 2px rgb(0 0 0 / 0.35);
+	--shadow-2: 0 10px 24px -12px rgb(0 0 0 / 0.7), 0 2px 4px -2px rgb(0 0 0 / 0.4);
+	--selection: rgb(93 201 226 / 0.3);
+}
+
+:root {
+	/* Soft state tints, derived from the theme tokens above */
+	--state-busy-soft: color-mix(in srgb, var(--state-busy) 12%, transparent);
+	--state-ok-soft: color-mix(in srgb, var(--state-ok) 12%, transparent);
+	--state-alert-soft: color-mix(in srgb, var(--state-alert) 12%, transparent);
+	--state-warn-soft: color-mix(in srgb, var(--state-warn) 14%, transparent);
 
 	/* Typography */
-	--font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
-	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--text-3xs: 0.625rem; /* 10px — packet tags and retry badges only */
+	--text-2xs: 0.6875rem; /* 11px — picture labels, code captions */
+	--text-xs: 0.75rem; /* 12px */
+	--text-sm: 0.8125rem; /* 13px */
+	--text-md: 0.875rem; /* 14px */
+	--text-base: 1rem; /* 16px */
+	--text-lg: 1.25rem; /* 20px — readout numbers */
+	--text-h1: 1.85rem;
 
 	/* Spacing (4px base unit) */
 	--space-1: 0.25rem;
@@ -37,38 +160,39 @@ html[data-theme='light'] {
 	--space-10: 2.5rem;
 	--space-12: 3rem;
 	--space-16: 4rem;
+	--gutter: var(--space-6);
 
 	/* Radius */
 	--radius-sm: 0.25rem;
 	--radius-md: 0.375rem;
 	--radius-lg: 0.5rem;
+	--radius-xl: 0.75rem;
+	--radius-pill: 999px;
+
+	/* Layout */
+	--hit-target: 44px;
+	--content-max: 1440px;
+	--reading-max: 42rem;
+	--gopher-size: 44px;
 
 	/* Motion */
 	--duration-fast: 150ms;
 	--duration-normal: 200ms;
+	--duration-shift: 260ms;
+	--duration-flight: 420ms;
+	--duration-alert: 700ms;
+	--ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+	--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+	--ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+
+	/* Stacking */
+	--z-flight: 20;
+	--z-sticky: 30;
 }
 
-html[data-theme='dark'] {
-	color-scheme: dark;
-
-	/* Semantic Go Colors (Dark) */
-	--bg-paper: #0b131e;
-	--bg-panel: #132030;
-	--bg-channel: #0f293a;
-	--bg-slot: #16354b;
-	--ink: #f1f5f9;
-	--ink-muted: #94a3b8;
-	--line: #263b52;
-	--go-blue: #5dc9e2;
-	--go-cyan: #00add8;
-	--go-cyan-ink: #082f49;
-	--job-cyan: #00add8;
-	--job-cyan-ink: #082f49;
-	--job-coral: #f43f5e;
-	--job-coral-ink: #0f172a;
-	--job-amber: #fddd00;
-	--job-amber-ink: #0f172a;
-	--worker-busy: #00add8;
-	--worker-idle: #64748b;
-	--progress-track: #1e293b;
+@media (max-width: 40rem) {
+	:root {
+		--gutter: var(--space-3);
+		--gopher-size: 36px;
+	}
 }

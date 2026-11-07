@@ -1,22 +1,50 @@
 ---
 import { getCollection, render } from 'astro:content';
 import Base from '../../layouts/Base.astro';
+import { sitePath } from '../../lib/site-path';
 
 export async function getStaticPaths() {
-	const lessons = await getCollection('lessons');
-	return lessons.map((lesson) => ({
+	const lessons = (await getCollection('lessons')).sort((a, b) => a.data.order - b.data.order);
+	return lessons.map((lesson, index) => ({
 		params: { slug: lesson.id },
-		props: { lesson },
+		props: { lesson, prev: lessons[index - 1], next: lessons[index + 1] },
 	}));
 }
 
-const { lesson } = Astro.props;
+const { lesson, prev, next } = Astro.props;
 const { Content } = await render(lesson);
 ---
 
 <Base title={`${lesson.data.title} — Worker pool`} description={lesson.data.description} layout="lesson">
-	<article>
+	<article class="lesson">
+		<p class="lesson-kicker">{`Lesson ${lesson.data.order}`}</p>
 		<h1>{lesson.data.title}</h1>
-		<Content />
+		<p class="lesson-lead">{lesson.data.description}</p>
+		<div class="prose">
+			<Content />
+		</div>
+		<nav class="lesson-pager" aria-label="Lessons">
+			{
+				prev ? (
+					<a href={sitePath(`lessons/${prev.id}/`)}>
+						<small>Previous</small>
+						<strong>{prev.data.title}</strong>
+					</a>
+				) : (
+					<a href={sitePath()}>
+						<small>Back to</small>
+						<strong>Picture</strong>
+					</a>
+				)
+			}
+			{
+				next && (
+					<a class="pager-next" href={sitePath(`lessons/${next.id}/`)}>
+						<small>Next</small>
+						<strong>{next.data.title}</strong>
+					</a>
+				)
+			}
+		</nav>
 	</article>
 </Base>

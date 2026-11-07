@@ -1,944 +1,1209 @@
 ---
-import { POOL_PRESETS } from '../lib/pool-presets';
+/**
+ * PoolPicture — the interactive picture of one Go worker pool.
+ *
+ * Producer ──jobs <- job──▶ Channel (chan Job, buffer) ──<-jobs──▶ Workers (goroutines) ──▶ Results
+ *                                     ▲                                  │
+ *                                     └──────── Retry backoff ◀──────────┘ (Resilience mode)
+ *
+ * The model lives in src/lib/pool-engine.ts (pure, no DOM). This component draws
+ * the state and moves job packets between docks. The DOM is a lagging view of the state:
+ * each change is measured (First), applied, measured again (Last), then animated.
+ */
+import {
+	DEFAULT_PRESET,
+	JOB_TYPES,
+	JOB_TYPE_ORDER,
+	MAX_BUFFER,
+	MAX_WORKERS,
+	POOL_PRESETS,
+	PRESET_ORDER,
+} from '../lib/pool-presets';
 
-const initial = POOL_PRESETS.normal;
-// Display order from left to right: Buffer [5] (leftmost) -> Buffer [0] (rightmost, closest to workers)
-const slotsLeftToRight = [5, 4, 3, 2, 1, 0];
-const slotX = (slotIndex: number) => 44 + (5 - slotIndex) * 108;
+const initial = POOL_PRESETS[DEFAULT_PRESET];
+const slotIndexes = Array.from({ length: MAX_BUFFER }, (_, i) => MAX_BUFFER - 1 - i); // [5..0], front at the right
+const workerIds = Array.from({ length: MAX_WORKERS }, (_, i) => i + 1);
+const presets = PRESET_ORDER.map((key) => POOL_PRESETS[key]);
 
-const toneFill = (tone: 'cyan' | 'coral' | 'amber') => {
-	if (tone === 'coral') return 'var(--job-coral)';
-	if (tone === 'amber') return 'var(--job-amber)';
-	return 'var(--job-cyan)';
-};
-
-const toneInk = (tone: 'cyan' | 'coral' | 'amber') => {
-	if (tone === 'coral') return 'var(--job-coral-ink)';
-	if (tone === 'amber') return 'var(--job-amber-ink)';
-	return 'var(--job-cyan-ink)';
+const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
+	const p = POOL_PRESETS[key];
+	const parts = [`${p.workers} workers`, `cap ${p.capacity}`];
+	if (p.mode === 'resilience') parts.push(`ctx ${p.timeoutSec}s`);
+	if (!p.autoSend) parts.push('producer off');
+	return parts.join(' · ');
 };
 ---
 
-<section class="pool-screen" aria-label="Worker pool harbor chart">
-	<div class="picture-frame" data-visual="harbor-chart">
-		<svg
-			class="harbor-svg"
-			viewBox="0 0 1120 460"
-			role="img"
-			aria-label="Harbor chart picture of one Go worker pool showing the channel, six buffer slots with Buffer 0 on the right, waiting jobs, and up to six workers."
-		>
-			<!-- Harbor chart border and grid -->
-			<rect x="8" y="8" width="1104" height="444" rx="6" fill="var(--bg-paper)" stroke="var(--line)" stroke-width="1.5" />
-			<text
-				id="chart-banner"
-				x="28"
-				y="38"
-				fill="var(--ink)"
-				font-family="var(--font-mono)"
-				font-size="13"
-				font-weight="700"
-			>
-				WORKER POOL HARBOR CHART // CHANNEL BUFFER CAP = 6 // WORKERS = 3 // CTX TIMEOUT = 6s
-			</text>
+<section class="pool" data-pool data-mode={initial.mode} data-running="false" aria-labelledby="pool-title">
+	<svg width="0" height="0" class="sr-only" aria-hidden="true" focusable="false">
+		<symbol id="pool-icon-email" viewBox="0 0 16 16">
+			<rect x="2" y="3.5" width="12" height="9" rx="1.5"></rect>
+			<path d="M2.6 4.6 8 8.8l5.4-4.2"></path>
+		</symbol>
+		<symbol id="pool-icon-webhook" viewBox="0 0 16 16">
+			<path d="M9.2 1.8 3.6 9h4.1l-1 5.2L12.4 7H8.3z"></path>
+		</symbol>
+		<symbol id="pool-icon-image" viewBox="0 0 16 16">
+			<rect x="2" y="2.5" width="12" height="11" rx="1.5"></rect>
+			<circle cx="6" cy="6.3" r="1.3"></circle>
+			<path d="m2.6 12 3.6-3.6 2.6 2.6 1.7-1.7 2.9 2.9"></path>
+		</symbol>
+		<symbol id="pool-icon-sync" viewBox="0 0 16 16">
+			<path d="M12.8 6.4A5 5 0 0 0 3.9 4.6L2.8 5.9"></path>
+			<path d="M2.8 2.8v3.1h3.1"></path>
+			<path d="M3.2 9.6a5 5 0 0 0 8.9 1.8l1.1-1.3"></path>
+			<path d="M13.2 13.2v-3.1h-3.1"></path>
+		</symbol>
+		<symbol id="pool-icon-check" viewBox="0 0 16 16"><path d="m3.5 8.4 3 3 6-6.8"></path></symbol>
+		<symbol id="pool-icon-cross" viewBox="0 0 16 16"><path d="m4.5 4.5 7 7m0-7-7 7"></path></symbol>
+		<symbol id="pool-icon-arrow" viewBox="0 0 16 16"><path d="M3 8h9.5M8.8 4.2 12.6 8l-3.8 3.8"></path></symbol>
+		<symbol id="pool-icon-send" viewBox="0 0 16 16"><path d="M8 13V3.5M4.2 7.2 8 3.4l3.8 3.8"></path></symbol>
+		<symbol id="pool-icon-play" viewBox="0 0 16 16"><path d="M5 3.2v9.6L12.6 8z"></path></symbol>
+		<symbol id="pool-icon-pause" viewBox="0 0 16 16"><path d="M5.5 3.5v9M10.5 3.5v9"></path></symbol>
+		<symbol id="pool-icon-step" viewBox="0 0 16 16"><path d="M4 3.5 9.5 8 4 12.5zM12 3.5v9"></path></symbol>
+		<symbol id="pool-icon-reset" viewBox="0 0 16 16">
+			<path d="M3 8a5 5 0 1 0 1.6-3.7"></path>
+			<path d="M3 2.6v3h3"></path>
+		</symbol>
+		<symbol id="pool-icon-retry" viewBox="0 0 16 16">
+			<path d="M13 8a5 5 0 1 1-1.6-3.7"></path>
+			<path d="M13 2.6v3h-3"></path>
+		</symbol>
+		<symbol id="pool-icon-clock" viewBox="0 0 16 16">
+			<circle cx="8" cy="8" r="5.5"></circle>
+			<path d="M8 5v3.2l2 1.3"></path>
+		</symbol>
+	</svg>
 
-			<!-- Channel water -->
-			<g data-channel="jobs">
-				<rect
-					id="channel-box"
-					x="28"
-					y="64"
-					width="684"
-					height="360"
-					rx="6"
-					fill="var(--bg-channel)"
-					stroke="var(--go-blue)"
-					stroke-width="1.5"
-				/>
-				<text x="44" y="92" fill="var(--ink)" font-family="var(--font-mono)" font-size="13" font-weight="700">
-					Channel (buffered job channel: chan Job)
-				</text>
-				<text x="44" y="112" fill="var(--ink-muted)" font-family="var(--font-mono)" font-size="11">
-					Jobs enqueue on the left and advance right to Buffer [0] before entering an idle worker
-				</text>
+	<div class="pool-layout">
+		<div class="stage-frame">
+			<header class="stage-head">
+				<div class="stage-title">
+					<h1 id="pool-title">Worker pool</h1>
+					<span class="run-chip" aria-hidden="true"><span class="run-dot"></span><span data-run-label>Paused</span></span>
+				</div>
+				<fieldset class="mode-switch">
+					<legend class="sr-only">Mode</legend>
+					<label>
+						<input type="radio" name="pool-mode" value="core" checked={initial.mode === 'core'} />
+						Core
+					</label>
+					<label>
+						<input type="radio" name="pool-mode" value="resilience" checked={initial.mode === 'resilience'} />
+						<svg class="icon" aria-hidden="true"><use href="#pool-icon-clock"></use></svg>
+						Resilience
+					</label>
+				</fieldset>
+				<p class="stage-hint" data-hint>{initial.hint}</p>
+			</header>
 
-				<!-- 6 Buffer slots: Buffer [5] on the left -> Buffer [0] on the right -->
+			<div class="stage" data-stage>
+				<section class="zone zone-producer" aria-labelledby="zone-producer-title">
+					<div class="zone-head">
+						<span class="zone-num" aria-hidden="true">01</span>
+						<h2 class="zone-title" id="zone-producer-title">Producer</h2>
+					</div>
+					<code class="zone-code">{'jobs <- job'}</code>
+					<div class="producer-body">
+						<button type="button" class="btn btn-primary btn-block" data-action="send">
+							<svg class="icon" aria-hidden="true"><use href="#pool-icon-send"></use></svg>
+							Send job
+						</button>
+						<div class="switch-row">
+							<span id="auto-send-label">Auto-send</span>
+							<button
+								type="button"
+								class="switch"
+								role="switch"
+								aria-checked={initial.autoSend ? 'true' : 'false'}
+								aria-labelledby="auto-send-label"
+								data-action="auto"></button>
+						</div>
+						<div class="outlet" data-outlet data-blocked="false">
+							<div class="outlet-label">
+								<svg class="icon" aria-hidden="true"><use href="#pool-icon-clock"></use></svg>
+								<span data-outlet-note>next send soon</span>
+							</div>
+							<div class="outlet-dock" data-dock="outlet"></div>
+						</div>
+						<div class="tray tray-retry" data-resilience-only data-tray="backoff">
+							<div class="tray-head">
+								<h3 class="tray-title">
+									<svg class="icon" aria-hidden="true"><use href="#pool-icon-retry"></use></svg>
+									Retry backoff
+								</h3>
+								<span class="tray-count" data-count="backoff">0</span>
+							</div>
+							<div class="chip-dock" data-dock="backoff" data-empty="none waiting"></div>
+						</div>
+					</div>
+				</section>
+
+				<section class="zone zone-channel" aria-labelledby="zone-channel-title">
+					<span class="lane" aria-hidden="true"><svg class="icon"><use href="#pool-icon-arrow"></use></svg></span>
+					<div class="zone-head">
+						<span class="zone-num" aria-hidden="true">02</span>
+						<h2 class="zone-title" id="zone-channel-title">Channel</h2>
+						<span class="zone-meta">chan Job</span>
+					</div>
+					<code class="zone-code" data-cap-code>{`jobs := make(chan Job, ${initial.capacity})`}</code>
+					<div class="channel" data-channel data-cap={initial.capacity} data-full="false">
+						<div class="pipe">
+							<ol class="slots" aria-label="Buffer slots, front at Buffer [0]">
+								{
+									slotIndexes.map((i) => (
+										<li class="slot" data-slot={i} data-front={i === 0 ? 'true' : 'false'} hidden={i >= initial.capacity}>
+											<span class="slot-label">{`[${i}]`}</span>
+											<div class="slot-dock" data-dock={`slot-${i}`} />
+										</li>
+									))
+								}
+							</ol>
+							<p class="unbuffered">unbuffered: each send waits for a receiver</p>
+							<span class="pipe-flow" aria-hidden="true"></span>
+						</div>
+						<div class="channel-meta">
+							<span class="gauge">
+								<span class="gauge-bar" aria-hidden="true">
+									{slotIndexes.toReversed().map((i) => <i data-gauge={i} hidden={i >= initial.capacity} />)}
+								</span>
+								<span data-gauge-text>{`len 0 / cap ${initial.capacity}`}</span>
+								<span class="full-badge">FULL</span>
+							</span>
+							<span class="front-mark">
+								front <svg class="icon" aria-hidden="true"><use href="#pool-icon-arrow"></use></svg>
+							</span>
+						</div>
+					</div>
+				</section>
+
+				<section class="zone zone-workers" aria-labelledby="zone-workers-title">
+					<span class="lane" aria-hidden="true"><svg class="icon"><use href="#pool-icon-arrow"></use></svg></span>
+					<div class="zone-head">
+						<span class="zone-num" aria-hidden="true">03</span>
+						<h2 class="zone-title" id="zone-workers-title">Workers</h2>
+						<span class="zone-meta" data-workers-meta>0/0 busy</span>
+					</div>
+					<div class="zone-code-stack">
+						<code class="zone-code">go worker(id, jobs, results)</code>
+						<code class="zone-code" data-resilience-only data-ctx-code>context.WithTimeout(ctx, 4*time.Second)</code>
+					</div>
+					<div class="workers">
+						{
+							workerIds.map((id) => (
+								<article class="worker" data-worker={id} data-state="offline" style={`--i: ${id - 1}`} aria-labelledby={`worker-${id}-name`}>
+									<div class="worker-top">
+										<svg class="gopher" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+											<defs>
+												<clipPath id={`gopher-eye-l-${id}`}>
+													<circle cx="17.5" cy="19" r="6" />
+												</clipPath>
+												<clipPath id={`gopher-eye-r-${id}`}>
+													<circle cx="30.5" cy="19" r="6" />
+												</clipPath>
+											</defs>
+											<g class="g-body">
+												<circle class="g-fur" cx="10.5" cy="11" r="4.2" />
+												<circle class="g-ear-in" cx="10.5" cy="11" r="2" />
+												<circle class="g-fur" cx="37.5" cy="11" r="4.2" />
+												<circle class="g-ear-in" cx="37.5" cy="11" r="2" />
+												<path
+													class="g-fur"
+													d="M24 4.5c9.6 0 15.5 6.5 15.5 15.6V41a4.5 4.5 0 0 1-4.5 4.5H13A4.5 4.5 0 0 1 8.5 41V20.1C8.5 11 14.4 4.5 24 4.5z"
+												/>
+												<path class="g-brow" d="M12.6 10.8q4.6-2.6 9-.4" />
+												<path class="g-brow" d="M26.4 10.4q4.4-2.2 9 .4" />
+												<circle class="g-eye" cx="17.5" cy="19" r="6" />
+												<circle class="g-eye" cx="30.5" cy="19" r="6" />
+												<g class="g-pupils">
+													<circle class="g-pupil" cx="18.2" cy="19.6" r="2.5" />
+													<circle class="g-pupil" cx="31.2" cy="19.6" r="2.5" />
+													<circle class="g-glint" cx="19.1" cy="18.6" r="0.8" />
+													<circle class="g-glint" cx="32.1" cy="18.6" r="0.8" />
+												</g>
+												<g clip-path={`url(#gopher-eye-l-${id})`}>
+													<rect class="g-lid" x="10.5" y="0" width="14" height="13.6" />
+												</g>
+												<g clip-path={`url(#gopher-eye-r-${id})`}>
+													<rect class="g-lid" x="23.5" y="0" width="14" height="13.6" />
+												</g>
+												<ellipse class="g-snout" cx="24" cy="28.6" rx="5.6" ry="4" />
+												<ellipse class="g-nose" cx="24" cy="26.4" rx="2.5" ry="1.7" />
+												<rect class="g-tooth" x="22.5" y="31.2" width="3" height="2.8" rx="0.6" />
+												<g class="g-hands">
+													<ellipse class="g-hand" cx="13" cy="40" rx="3.4" ry="2.4" />
+													<ellipse class="g-hand" cx="35" cy="40" rx="3.4" ry="2.4" />
+												</g>
+											</g>
+											<text class="g-zz" x="37" y="8">z</text>
+											<text class="g-zz" x="42" y="3">z</text>
+											<g class="g-alert">
+												<circle cx="42" cy="6" r="5.5" />
+												<path d="M42 3.2v3.3M42 8.7v.1" />
+											</g>
+										</svg>
+										<div class="worker-id">
+											<h3 class="worker-name" id={`worker-${id}-name`}>{`Worker ${id}`}</h3>
+											<span class="pill" data-pill>Offline</span>
+										</div>
+									</div>
+									<div class="worker-dock" data-dock={`worker-${id}`} />
+									<div class="meter" data-progress={id} aria-hidden="true">
+										<span class="meter-fill" />
+										<span class="meter-tick" hidden />
+									</div>
+									<p class="worker-note" data-note>Not started</p>
+								</article>
+							))
+						}
+					</div>
+				</section>
+
+				<section class="zone zone-results" aria-labelledby="zone-results-title">
+					<span class="lane" aria-hidden="true"><svg class="icon"><use href="#pool-icon-arrow"></use></svg></span>
+					<div class="zone-head">
+						<span class="zone-num" aria-hidden="true">04</span>
+						<h2 class="zone-title" id="zone-results-title">Results</h2>
+						<span class="zone-meta">chan Result</span>
+					</div>
+					<code class="zone-code">{'results <- Result{}'}</code>
+					<div class="tray tray-done" data-tray="done">
+						<div class="tray-head">
+							<h3 class="tray-title">
+								<svg class="icon" aria-hidden="true"><use href="#pool-icon-check"></use></svg>
+								Done
+							</h3>
+							<span class="tray-count" data-count="done">0</span>
+						</div>
+						<div class="chip-dock" data-dock="done" data-empty="no results yet"></div>
+					</div>
+					<div class="tray tray-failed" data-resilience-only data-tray="failed">
+						<div class="tray-head">
+							<h3 class="tray-title">
+								<svg class="icon" aria-hidden="true"><use href="#pool-icon-cross"></use></svg>
+								Failed
+							</h3>
+							<span class="tray-count" data-count="failed">0</span>
+						</div>
+						<div class="chip-dock" data-dock="failed" data-empty="none"></div>
+					</div>
+				</section>
+
+				<div class="flight-layer" data-flight-layer aria-hidden="true"></div>
+			</div>
+
+			<div class="readout" aria-label="Readout">
+				<dl class="tiles">
+					<div class="tile"><dt>len(jobs)</dt><dd data-tile="len">0/0</dd></div>
+					<div class="tile"><dt>busy</dt><dd data-tile="busy">0/0</dd></div>
+					<div class="tile" data-tone="ok"><dt>done</dt><dd data-tile="done">0</dd></div>
+					<div class="tile" data-tone="warn" data-resilience-only><dt>retried</dt><dd data-tile="retried">0</dd></div>
+					<div class="tile" data-tone="alert" data-resilience-only><dt>timed out</dt><dd data-tile="timedOut">0</dd></div>
+					<div class="tile" data-tone="alert" data-resilience-only><dt>failed</dt><dd data-tile="failed">0</dd></div>
+				</dl>
+				<ol class="event-log" data-log aria-label="Recent events"></ol>
+			</div>
+		</div>
+
+		<section class="deck deck-presets" aria-labelledby="deck-presets-title">
+			<h2 class="deck-title" id="deck-presets-title">Presets <small>keys 1–4</small></h2>
+			<div class="preset-grid">
 				{
-					slotsLeftToRight.map((slotIndex) => {
-						const x = slotX(slotIndex);
-						const job = initial.waitingJobs.find((j) => j.slot === slotIndex);
-						return (
-							<g data-slot={slotIndex} transform={`translate(${x}, 140)`}>
-								<rect
-									data-slot-rect={slotIndex}
-									x="0"
-									y="0"
-									width="96"
-									height="244"
-									rx="4"
-									fill="var(--bg-slot)"
-									stroke={slotIndex === 0 ? 'var(--go-blue)' : 'var(--line)'}
-									stroke-width="1.5"
-									stroke-dasharray="4 3"
-								/>
-								<text
-									x="10"
-									y="22"
-									fill={slotIndex === 0 ? 'var(--go-blue)' : 'var(--ink-muted)'}
-									font-family="var(--font-mono)"
-									font-size="11"
-									font-weight={slotIndex === 0 ? '700' : '400'}
-								>
-									{`Buffer [${slotIndex}]`}
-								</text>
-								<g
-									data-job={slotIndex}
-									class="channel-job-group"
-									style={job ? 'opacity: 1;' : 'opacity: 0;'}
-									transform="translate(8, 36)"
-								>
-									<rect
-										data-job-rect={slotIndex}
-										x="0"
-										y="0"
-										width="80"
-										height="192"
-										rx="4"
-										fill={job ? toneFill(job.tone) : 'var(--job-cyan)'}
-										stroke="var(--ink)"
-										stroke-width="1.2"
-									/>
-									<text
-										data-job-id={slotIndex}
-										x="10"
-										y="32"
-										fill={job ? toneInk(job.tone) : 'var(--job-cyan-ink)'}
-										font-family="var(--font-mono)"
-										font-size="12"
-										font-weight="700"
-									>
-										{job ? job.id : ''}
-									</text>
-									<text
-										data-job-time={slotIndex}
-										x="10"
-										y="56"
-										fill={job ? toneInk(job.tone) : 'var(--job-cyan-ink)'}
-										font-family="var(--font-mono)"
-										font-size="11"
-									>
-										{job ? `${job.durationSec}s work` : ''}
-									</text>
-									<text
-										data-job-tag={slotIndex}
-										x="10"
-										y="80"
-										fill={job ? toneInk(job.tone) : 'var(--job-cyan-ink)'}
-										font-family="var(--font-mono)"
-										font-size="10"
-									>
-										{job ? (job.durationSec > 6 ? '>6s timeout' : 'queued') : ''}
-									</text>
-								</g>
-							</g>
-						);
-					})
+					presets.map((p) => (
+						<label class="preset">
+							<input type="radio" name="pool-preset" value={p.key} checked={p.key === DEFAULT_PRESET} />
+							<span class="preset-num" aria-hidden="true">{p.order}</span>
+							<span class="preset-name">{p.label}</span>
+							<span class="preset-meta">{presetMeta(p.key)}</span>
+						</label>
+					))
 				}
-			</g>
-
-			<!-- Dispatch connector lines from Buffer [0] (right edge of channel) to Workers -->
-			{
-				initial.workers.map((worker, idx) => {
-					const y = 91 + idx * 60;
-					const active = idx < initial.workerCount;
-					return (
-						<line
-							data-connector={worker.id}
-							x1="712"
-							y1={y}
-							x2="748"
-							y2={y}
-							stroke="var(--go-blue)"
-							stroke-width="2"
-							style={active ? 'opacity: 1;' : 'opacity: 0.2;'}
-						/>
-					);
-				})
-			}
-
-			<!-- Up to 6 Workers -->
-			{
-				initial.workers.map((worker, idx) => {
-					const y = 64 + idx * 60;
-					const isActive = idx < initial.workerCount;
-					const isBusy = worker.status === 'BUSY';
-					const barWidth = Math.round((worker.progressPct / 100) * 316);
-					return (
-						<g
-							data-worker={worker.id}
-							transform={`translate(748, ${y})`}
-							style={isActive ? 'opacity: 1;' : 'opacity: 0.25;'}
-						>
-							<rect
-								data-worker-card={worker.id}
-								x="0"
-								y="0"
-								width="344"
-								height="52"
-								rx="5"
-								fill="var(--bg-panel)"
-								stroke={isBusy ? 'var(--worker-busy)' : 'var(--line)'}
-								stroke-width={isBusy ? '2' : '1.5'}
-							/>
-							<text x="14" y="20" fill="var(--ink)" font-family="var(--font-mono)" font-size="12" font-weight="700">
-								{`Worker ${worker.id}`}
-							</text>
-							<!-- Active job tone pill docked inside the worker -->
-							<rect
-								data-worker-pill={worker.id}
-								x="84"
-								y="9"
-								width="10"
-								height="13"
-								rx="2"
-								fill={isBusy ? toneFill(worker.tone) : 'var(--line)'}
-								stroke="var(--ink)"
-								stroke-width="0.8"
-								style={isBusy ? 'opacity: 1;' : 'opacity: 0;'}
-							/>
-							<text
-								data-worker-job={worker.id}
-								x="100"
-								y="20"
-								fill="var(--ink-muted)"
-								font-family="var(--font-mono)"
-								font-size="11"
-							>
-								{worker.jobId
-									? `${worker.jobId} • ${worker.remainingSec.toFixed(1)}s left (${worker.progressPct}%)`
-									: isActive
-										? 'Waiting on <-jobs'
-										: 'Offline'}
-							</text>
-							<text
-								data-worker-status={worker.id}
-								x="330"
-								y="20"
-								text-anchor="end"
-								fill={isBusy ? 'var(--worker-busy)' : 'var(--worker-idle)'}
-								font-family="var(--font-mono)"
-								font-size="11"
-								font-weight="700"
-							>
-								{isActive ? worker.status : 'OFF'}
-							</text>
-							<rect
-								x="14"
-								y="30"
-								width="316"
-								height="12"
-								rx="3"
-								fill="var(--progress-track)"
-								stroke="var(--line)"
-								stroke-width="1"
-							/>
-							<rect
-								data-progress={worker.id}
-								class="worker-progress-bar"
-								x="14"
-								y="30"
-								width={barWidth}
-								height="12"
-								rx="3"
-								fill="var(--go-cyan)"
-							/>
-						</g>
-					);
-				})
-			}
-
-			<!-- Transient animation layer for jobs flying from Buffer [0] to a Worker -->
-			<g id="dispatch-flight-layer" pointer-events="none"></g>
-		</svg>
-	</div>
-
-	<div class="instrument-bar" aria-label="Worker pool controls and readout">
-		<div class="readout-strip" aria-live="polite">
-			<div class="readout-metrics">
-				<span class="readout-item">
-					Buffer: <strong id="readout-buffer">{`${initial.waitingJobs.length} / ${initial.bufferCapacity}`}</strong>
-				</span>
-				<span class="readout-item">
-					Active workers: <strong id="readout-workers">{`${initial.workers.filter((w) => w.status === 'BUSY').length} / ${initial.workerCount}`}</strong>
-				</span>
-				<span class="readout-item">
-					Completed jobs: <strong id="readout-completed">{initial.completedJobs}</strong>
-				</span>
-				<span class="readout-item">
-					Timeouts / Retries: <strong id="readout-timeouts">{initial.timedOutJobs}</strong>
-				</span>
-				<span class="readout-item">
-					State: <strong id="readout-state">Ready</strong>
-				</span>
 			</div>
+		</section>
 
-			<div class="preset-group">
-				<label for="preset-select">Preset:</label>
-				<select id="preset-select" class="preset-select">
-					<option value="normal" selected>Normal run</option>
-					<option value="full">Full buffer</option>
-					<option value="idle">All workers idle</option>
-				</select>
+		<section class="deck deck-run" aria-labelledby="deck-run-title">
+			<h2 class="deck-title" id="deck-run-title">Run <span class="clock" data-clock>t = 0.0s</span></h2>
+			<div class="run-row">
+				<button type="button" class="btn btn-primary btn-run" data-action="run">
+					<svg class="icon icon-play" aria-hidden="true"><use href="#pool-icon-play"></use></svg>
+					<svg class="icon icon-pause" aria-hidden="true"><use href="#pool-icon-pause"></use></svg>
+					<span data-run-text>Run</span>
+				</button>
+				<button type="button" class="btn" data-action="step" aria-label="Step 0.5 seconds">
+					<svg class="icon" aria-hidden="true"><use href="#pool-icon-step"></use></svg>
+					+0.5s
+				</button>
+				<button type="button" class="btn" data-action="reset">
+					<svg class="icon" aria-hidden="true"><use href="#pool-icon-reset"></use></svg>
+					Reset
+				</button>
 			</div>
-		</div>
+			<p class="deck-note">Step pauses the picture and moves time forward by 0.5s.</p>
+		</section>
 
-		<div class="controls-row">
-			<button type="button" class="control-button control-button-primary" id="ctrl-run">
-				Start
-			</button>
-			<button type="button" class="control-button" id="ctrl-add-job">
-				+ Add Job (1–10s)
-			</button>
-			<button type="button" class="control-button" id="ctrl-step">
-				Step (+0.5s)
-			</button>
-			<button type="button" class="control-button" id="ctrl-reset">
-				Reset
-			</button>
+		<section class="deck deck-pool" aria-labelledby="deck-pool-title">
+			<h2 class="deck-title" id="deck-pool-title">Pool</h2>
+			<div class="field">
+				<label for="pool-workers">Workers</label>
+				<output for="pool-workers" data-out="workers">{initial.workers}</output>
+				<input id="pool-workers" type="range" min="1" max={MAX_WORKERS} step="1" value={initial.workers} data-input="workers" />
+			</div>
+			<div class="field">
+				<label for="pool-buffer">Buffer <code>cap(jobs)</code></label>
+				<output for="pool-buffer" data-out="buffer">{initial.capacity}</output>
+				<input id="pool-buffer" type="range" min="0" max={MAX_BUFFER} step="1" value={initial.capacity} data-input="buffer" />
+			</div>
+			<p class="deck-note">make() fixes the buffer size, so a new size restarts the pool.</p>
+		</section>
 
-			<label class="control-field" for="ctrl-workers">
-				<span>Workers</span>
-				<input id="ctrl-workers" type="range" min="1" max="6" value="3" />
-				<output id="out-workers" for="ctrl-workers">3</output>
-			</label>
+		<section class="deck deck-context" aria-labelledby="deck-context-title" data-disabled={initial.mode === 'core' ? 'true' : 'false'}>
+			<h2 class="deck-title" id="deck-context-title">Context</h2>
+			<div class="field">
+				<label for="pool-timeout">ctx timeout</label>
+				<output for="pool-timeout" data-out="timeout">{`${initial.timeoutSec}s`}</output>
+				<input id="pool-timeout" type="range" min="2" max="6" step="1" value={initial.timeoutSec} data-input="timeout" />
+			</div>
+			<div class="field">
+				<label for="pool-spike">Spike chance</label>
+				<output for="pool-spike" data-out="spike">{`${Math.round(initial.spikeChance * 100)}%`}</output>
+				<input id="pool-spike" type="range" min="0" max="50" step="5" value={Math.round(initial.spikeChance * 100)} data-input="spike" />
+			</div>
+			<p class="deck-note" data-context-note>Core mode has no deadlines. Switch to Resilience to use these.</p>
+		</section>
 
-			<label class="control-field" for="ctrl-buffer">
-				<span>Buffer</span>
-				<input id="ctrl-buffer" type="range" min="1" max="6" value="6" />
-				<output id="out-buffer" for="ctrl-buffer">6</output>
-			</label>
-
-			<label class="control-field" for="ctrl-job-time">
-				<span>ctx Timeout</span>
-				<input id="ctrl-job-time" type="range" min="3" max="10" value="6" />
-				<output id="out-job-time" for="ctrl-job-time">6s</output>
-			</label>
-
-			<label class="control-field control-toggle" for="ctrl-resilience">
-				<input id="ctrl-resilience" type="checkbox" checked />
-				<span>Resilience (Timeout + Retry)</span>
-			</label>
-
-			<label class="control-field control-toggle" for="ctrl-autofeed">
-				<input id="ctrl-autofeed" type="checkbox" />
-				<span>Auto-feed</span>
-			</label>
-		</div>
+		<p class="sr-only" aria-live="polite" data-announcer></p>
 	</div>
 </section>
 
 <script>
-	import { POOL_PRESETS, type JobTone, type PoolState, type WaitingJob, type WorkerSlot } from '../lib/pool-presets';
+	import {
+		DEFAULT_PRESET,
+		JOB_TYPES,
+		MAX_RETRIES,
+		MODE_HINTS,
+		POOL_PRESETS,
+		PRESET_ORDER,
+		type Mode,
+		type PresetKey,
+	} from '../lib/pool-presets';
+	import {
+		busyCount,
+		checkInvariants,
+		createPool,
+		describeEvent,
+		onlineCount,
+		producerBlocked,
+		sendJob,
+		setAutoSend,
+		setMode,
+		setSpikeChance,
+		setTimeoutSec,
+		setWorkerCount,
+		step,
+		type Job,
+		type PoolEvent,
+		type PoolState,
+	} from '../lib/pool-engine';
 
-	const TONES: JobTone[] = ['cyan', 'coral', 'amber'];
-	const SVG_NS = 'http://www.w3.org/2000/svg';
-	const slotX = (slotIndex: number) => 44 + (5 - slotIndex) * 108;
+	type Variant = 'slot' | 'row' | 'chip';
+	type Status = 'done' | 'failed' | 'backoff' | 'blocked' | null;
 
-	const prefersReducedMotion = () =>
-		window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-	const toneFill = (tone: JobTone) => {
-		if (tone === 'coral') return 'var(--job-coral)';
-		if (tone === 'amber') return 'var(--job-amber)';
-		return 'var(--job-cyan)';
-	};
-
-	const toneInk = (tone: JobTone) => {
-		if (tone === 'coral') return 'var(--job-coral-ink)';
-		if (tone === 'amber') return 'var(--job-amber-ink)';
-		return 'var(--job-cyan-ink)';
-	};
-
-	interface LiveWorker extends WorkerSlot {
-		elapsedSec: number;
-		timeoutFlashSec: number;
+	interface Placement {
+		key: string;
+		job: Job;
+		dockId: string;
+		variant: Variant;
+		status: Status;
 	}
 
-	interface LivePoolState {
-		key: PoolState['key'];
-		bufferCapacity: number;
-		workerCount: number;
-		timeoutSec: number;
-		resilienceEnabled: boolean;
-		autoFeed: boolean;
-		running: boolean;
-		statusNote: string;
-		completedJobs: number;
-		timedOutJobs: number;
-		nextJobNumber: number;
-		autoFeedTimerSec: number;
-		enqueueCooldownSec: number;
-		waitingJobs: WaitingJob[];
-		workers: LiveWorker[];
+	interface Flight {
+		flyer: HTMLElement;
+		target: HTMLElement;
+		anims: Animation[];
 	}
 
-	const cloneFromPreset = (preset: PoolState): LivePoolState => {
-		const waitingJobs = preset.waitingJobs.map((j, idx) => ({
-			...j,
-			slot: idx,
-			retryCount: j.retryCount ?? 0,
+	type Tone = 'ok' | 'warn' | 'alert' | 'info';
+
+	const DONE_SHOWN = 4;
+	const FAILED_SHOWN = 3;
+	const STEP_SEC = 0.5;
+	const MAX_FRAME_SEC = 0.1;
+	const LOG_SIZE = 3;
+
+	const root = document.querySelector<HTMLElement>('[data-pool]');
+	if (root) initPool(root);
+
+	function initPool(root: HTMLElement) {
+		const one = <T extends Element = HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
+		const all = <T extends Element = HTMLElement>(selector: string) => Array.from(root.querySelectorAll<T>(selector));
+
+		/* -------- Elements -------- */
+		const stage = one('[data-stage]');
+		const layer = one('[data-flight-layer]');
+		const hintEl = one('[data-hint]');
+		const runLabel = one('[data-run-label]');
+		const runText = one('[data-run-text]');
+		const clockEl = one('[data-clock]');
+		const channelEl = one('[data-channel]');
+		const capCode = one('[data-cap-code]');
+		const ctxCode = one('[data-ctx-code]');
+		const gaugeText = one('[data-gauge-text]');
+		const gaugeBars = all('[data-gauge]');
+		const slotEls = all('[data-slot]');
+		const outletEl = one('[data-outlet]');
+		const outletNote = one('[data-outlet-note]');
+		const workersMeta = one('[data-workers-meta]');
+		const logEl = one('[data-log]');
+		const announcer = one('[data-announcer]');
+		const autoSwitch = one<HTMLButtonElement>('[data-action="auto"]');
+		const sendButton = one<HTMLButtonElement>('[data-action="send"]');
+		const contextDeck = one('.deck-context');
+		const contextNote = one('[data-context-note]');
+		const inputs = {
+			workers: one<HTMLInputElement>('[data-input="workers"]'),
+			buffer: one<HTMLInputElement>('[data-input="buffer"]'),
+			timeout: one<HTMLInputElement>('[data-input="timeout"]'),
+			spike: one<HTMLInputElement>('[data-input="spike"]'),
+		};
+		const outputs = {
+			workers: one('[data-out="workers"]'),
+			buffer: one('[data-out="buffer"]'),
+			timeout: one('[data-out="timeout"]'),
+			spike: one('[data-out="spike"]'),
+		};
+		const tiles = Object.fromEntries(all('[data-tile]').map((el) => [el.dataset.tile!, el]));
+		const counts = Object.fromEntries(all('[data-count]').map((el) => [el.dataset.count!, el]));
+		const trays = Object.fromEntries(all('[data-tray]').map((el) => [el.dataset.tray!, el]));
+		const docks = new Map(all('[data-dock]').map((el) => [el.dataset.dock!, el]));
+		const workerEls = all('[data-worker]');
+		const worker = workerEls.map((el) => ({
+			el,
+			pill: el.querySelector<HTMLElement>('[data-pill]')!,
+			note: el.querySelector<HTMLElement>('[data-note]')!,
+			meter: el.querySelector<HTMLElement>('[data-progress]')!,
+			tick: el.querySelector<HTMLElement>('.meter-tick')!,
 		}));
 
-		const workers: LiveWorker[] = Array.from({ length: 6 }, (_, i) => {
-			const existing = preset.workers[i];
-			if (existing && existing.status === 'BUSY' && existing.jobId) {
-				const dur = existing.durationSec || 4;
-				const rem = existing.remainingSec ?? dur * (1 - existing.progressPct / 100);
-				return {
-					...existing,
-					durationSec: dur,
-					remainingSec: rem,
-					elapsedSec: dur - rem,
-					timeoutFlashSec: 0,
-					retryCount: existing.retryCount ?? 0,
-				};
-			}
-			return {
-				id: i + 1,
-				status: 'IDLE',
-				jobId: null,
-				durationSec: 0,
-				remainingSec: 0,
-				progressPct: 0,
-				tone: 'cyan',
-				retryCount: 0,
-				elapsedSec: 0,
-				timeoutFlashSec: 0,
-			};
-		});
+		/* -------- Motion tokens (read from tokens.css, single source of truth) -------- */
+		const rootStyle = getComputedStyle(document.documentElement);
+		const token = (name: string, fallback: string) => rootStyle.getPropertyValue(name).trim() || fallback;
+		const ms = (name: string, fallback: number) => parseFloat(token(name, '')) || fallback;
+		const EASE_IN_OUT = token('--ease-in-out', 'ease-in-out');
+		const EASE_OUT = token('--ease-out', 'ease-out');
+		const EASE_SPRING = token('--ease-spring', 'ease-out');
+		const FLIGHT_MS = ms('--duration-flight', 420);
+		const SHIFT_MS = ms('--duration-shift', 260);
+		const FAST_MS = ms('--duration-fast', 150);
 
-		return {
-			key: preset.key,
-			bufferCapacity: preset.bufferCapacity,
-			workerCount: preset.workerCount,
-			timeoutSec: preset.jobTimeSec,
-			resilienceEnabled: true,
-			autoFeed: false,
-			running: false,
-			statusNote: 'Ready',
-			completedJobs: preset.completedJobs,
-			timedOutJobs: preset.timedOutJobs ?? 0,
-			nextJobNumber: 108,
-			autoFeedTimerSec: 0,
-			enqueueCooldownSec: 0,
-			waitingJobs,
-			workers,
+		/* -------- State -------- */
+		const reducedQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+		let reduced = reducedQuery.matches;
+		let presetKey: PresetKey = DEFAULT_PRESET;
+		let pool: PoolState = createPool(presetKey);
+		let hint = POOL_PRESETS[presetKey].hint;
+		let running = !reduced; // The visitor's intent. The loop also needs the picture on screen.
+		let inView = false;
+		let pageVisible = document.visibilityState === 'visible';
+		let raf = 0;
+		let lastTs = 0;
+		let lastTextAt = 0;
+		let lastWidth = window.innerWidth;
+		let rejectTimer = 0;
+		const packets = new Map<string, HTMLElement>();
+		const flights = new Map<string, Flight>();
+		const log: { t: number; text: string; tone: Tone }[] = [];
+
+		/* -------- Small helpers -------- */
+		const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+		const setData = (el: HTMLElement, key: string, value: string) => {
+			if (el.dataset[key] !== value) el.dataset[key] = value;
 		};
-	};
+		const setText = (el: HTMLElement, value: string) => {
+			if (el.textContent !== value) el.textContent = value;
+		};
+		const canAnimate = () => !reduced && inView && pageVisible;
+		const icon = (name: string) => `<svg class="icon" aria-hidden="true"><use href="#pool-icon-${name}"></use></svg>`;
 
-	const state: LivePoolState = cloneFromPreset(POOL_PRESETS.normal);
+		const announce = (text: string) => {
+			announcer.textContent = '';
+			window.requestAnimationFrame(() => {
+				announcer.textContent = text;
+			});
+		};
 
-	const reindexQueue = () => {
-		state.waitingJobs.forEach((job, idx) => {
-			job.slot = idx;
-		});
-	};
+		/* ================================================================ */
+		/* Packets                                                          */
+		/* ================================================================ */
 
-	/**
-	 * Animate a newly enqueued job sliding in from the left channel entrance into its target slot.
-	 */
-	const animateJobEnqueue = (targetSlot: number) => {
-		if (prefersReducedMotion()) return;
-		const jobGroup = document.querySelector<SVGGElement>(`[data-job="${targetSlot}"]`);
-		if (!jobGroup || typeof jobGroup.animate !== 'function') return;
+		function placements(): Placement[] {
+			const list: Placement[] = [];
+			const add = (job: Job, dockId: string, variant: Variant, status: Status = null) =>
+				list.push({ key: `j${job.id}`, job, dockId, variant, status });
+			pool.buffer.forEach((job, i) => add(job, `slot-${i}`, 'slot'));
+			pool.workers.forEach((w) => w.job && add(w.job, `worker-${w.id}`, 'row'));
+			pool.sendq.forEach((s) => (s.from === 'producer' ? add(s.job, 'outlet', 'row', 'blocked') : add(s.job, 'backoff', 'chip', 'blocked')));
+			pool.backoffs.forEach((b) => add(b.job, 'backoff', 'chip', 'backoff'));
+			pool.results
+				.filter((r) => r.status === 'done')
+				.slice(0, DONE_SHOWN)
+				.forEach((r) => add(r.job, 'done', 'chip', 'done'));
+			pool.results
+				.filter((r) => r.status === 'failed')
+				.slice(0, FAILED_SHOWN)
+				.forEach((r) => add(r.job, 'failed', 'chip', 'failed'));
+			return list;
+		}
 
-		// Distance from the left entrance of the channel (x = 36) to the target slot
-		const entranceDeltaX = 36 - (slotX(targetSlot) + 8);
-		jobGroup.animate(
-			[
-				{ transform: `translate(${entranceDeltaX}px, 36px) scale(0.92)`, opacity: 0.25 },
-				{ transform: 'translate(8px, 36px) scale(1)', opacity: 1 },
-			],
-			{
-				duration: 280,
-				easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+		function packetLabel(p: Placement) {
+			const { job, status } = p;
+			const retries = job.attempt - 1;
+			const parts = [`Job ${job.id}`, JOB_TYPES[job.type].label, `${job.workSec} seconds`];
+			if (retries > 0) parts.push(`retry ${retries} of ${MAX_RETRIES}`);
+			if (status === 'blocked') parts.push('blocked on send');
+			if (status === 'backoff') parts.push('waiting for backoff');
+			if (status === 'done') parts.push('done');
+			if (status === 'failed') parts.push('failed');
+			return parts.join(', ');
+		}
+
+		function packetInner(p: Placement) {
+			const { job, variant, status } = p;
+			const retries = job.attempt - 1;
+			const badge = `<span class="pk-badge" aria-hidden="true">${icon(job.type)}</span>`;
+			const id = `<span class="pk-id">#${job.id}</span>`;
+			const retry = retries > 0 ? `<span class="pk-retry">r${retries}/${MAX_RETRIES}</span>` : '';
+			if (variant === 'chip') {
+				const mark =
+					status === 'done'
+						? icon('check')
+						: status === 'failed'
+							? icon('cross')
+							: '<svg class="pk-ring" viewBox="0 0 20 20" aria-hidden="true"><circle class="ring-track" cx="10" cy="10" r="7"></circle><circle class="ring-fill" cx="10" cy="10" r="7" pathLength="1"></circle></svg>';
+				return `${badge}${id}${retry}<span class="pk-mark" data-status="${status}">${mark}</span>`;
 			}
-		);
-	};
+			const tag = `<span class="pk-tag">${JOB_TYPES[job.type].tag}</span>`;
+			const work = `<span class="pk-work">${job.workSec}s</span>`;
+			return `${badge}${id}${tag}${work}${retry}`;
+		}
 
-	/**
-	 * Animate waiting jobs shifting one slot to the right (+108px) when Buffer [0] is pulled.
-	 */
-	const animateQueueShiftRight = (shiftedCount: number) => {
-		if (prefersReducedMotion()) return;
-		for (let slot = 0; slot < shiftedCount; slot++) {
-			const jobGroup = document.querySelector<SVGGElement>(`[data-job="${slot}"]`);
-			if (!jobGroup || typeof jobGroup.animate !== 'function') continue;
-			// Previous slot was slot + 1, which sits 108px to the left (-108px) of current slot
-			jobGroup.animate(
+		function applyPacket(el: HTMLElement, p: Placement) {
+			const signature = `${p.variant}|${p.job.attempt}|${p.status ?? ''}`;
+			el.dataset.dock = p.dockId;
+			if (el.dataset.sig === signature) return;
+			el.dataset.sig = signature;
+			el.dataset.variant = p.variant;
+			el.dataset.status = p.status ?? '';
+			el.dataset.retry = String(p.job.attempt > 1);
+			el.dataset.blocked = String(p.status === 'blocked');
+			el.setAttribute('aria-label', packetLabel(p));
+			el.innerHTML = packetInner(p);
+		}
+
+		function buildPacket(p: Placement) {
+			const el = document.createElement('div');
+			el.className = 'packet';
+			el.setAttribute('role', 'img');
+			el.dataset.key = p.key;
+			el.dataset.job = String(p.job.id);
+			el.dataset.type = p.job.type;
+			applyPacket(el, p);
+			return el;
+		}
+
+		function measureAll() {
+			const rects = new Map<string, DOMRect>();
+			for (const [key, el] of packets) {
+				const flight = flights.get(key);
+				rects.set(key, (flight ? flight.flyer : el).getBoundingClientRect());
+			}
+			return rects;
+		}
+
+		function cancelFlight(key: string) {
+			const flight = flights.get(key);
+			if (!flight) return;
+			flights.delete(key);
+			flight.anims.forEach((a) => a.cancel());
+			flight.flyer.remove();
+		}
+
+		function cancelAllMotion() {
+			for (const key of [...flights.keys()]) cancelFlight(key);
+			layer.replaceChildren();
+			for (const el of packets.values()) el.getAnimations().forEach((a) => a.cancel());
+		}
+
+		function placeInLayer(el: HTMLElement, rect: DOMRect, base: DOMRect) {
+			el.getAnimations().forEach((a) => a.cancel());
+			el.classList.add('flyer');
+			el.style.left = `${rect.left - base.left}px`;
+			el.style.top = `${rect.top - base.top}px`;
+			el.style.width = `${rect.width}px`;
+			el.style.height = `${rect.height}px`;
+			layer.append(el);
+		}
+
+		/** Lead motion: a job packet travels from one dock to another along a short arc. */
+		function fly(key: string, flyer: HTMLElement, from: DOMRect, target: HTMLElement, to: DOMRect, base: DOMRect, entering = false) {
+			placeInLayer(flyer, from, base);
+			const dx = to.left + to.width / 2 - (from.left + from.width / 2);
+			const dy = to.top + to.height / 2 - (from.top + from.height / 2);
+			const scale = clamp(Math.sqrt((to.width * to.height) / Math.max(1, from.width * from.height)), 0.6, 1.5);
+			const distance = Math.hypot(dx, dy);
+			const lift = Math.min(28, 6 + distance * 0.08);
+			const duration = clamp(FLIGHT_MS * (0.8 + distance / 1400), FLIGHT_MS * 0.8, FLIGHT_MS * 1.35);
+			const startScale = entering ? 0.94 : 1;
+			const move = flyer.animate(
 				[
-					{ transform: 'translate(-100px, 36px)' },
-					{ transform: 'translate(8px, 36px)' },
+					{ transform: `translate(0px, 0px) scale(${startScale})` },
+					{ transform: `translate(${dx * 0.5}px, ${dy * 0.5 - lift}px) scale(${((1 + scale) / 2) * 1.03})`, offset: 0.5 },
+					{ transform: `translate(${dx}px, ${dy}px) scale(${scale})` },
 				],
-				{
-					duration: 240,
-					easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-				}
+				{ duration, easing: EASE_IN_OUT, fill: 'forwards' },
+			);
+			const fadeOut = flyer.animate(
+				entering
+					? [{ opacity: 0 }, { opacity: 1, offset: 0.15 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }]
+					: [{ opacity: 1 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }],
+				{ duration, fill: 'forwards' },
+			);
+			const fadeIn = target.animate([{ opacity: 0 }, { opacity: 0, offset: 0.6 }, { opacity: 1 }], { duration });
+			const flight: Flight = { flyer, target, anims: [move, fadeOut, fadeIn] };
+			flights.set(key, flight);
+			move.finished
+				.then(() => {
+					if (flights.get(key) !== flight) return;
+					flights.delete(key);
+					flyer.remove();
+				})
+				.catch(() => {});
+		}
+
+		/** Support motion: a packet that stays in its container slides to its new place. */
+		function shift(el: HTMLElement, from: DOMRect, to: DOMRect) {
+			const dx = from.left - to.left;
+			const dy = from.top - to.top;
+			if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+			el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: SHIFT_MS, easing: EASE_IN_OUT });
+		}
+
+		function appear(el: HTMLElement) {
+			el.animate(
+				[
+					{ opacity: 0, transform: 'scale(0.94)' },
+					{ opacity: 1, transform: 'none' },
+				],
+				{ duration: FAST_MS * 1.6, easing: EASE_SPRING },
 			);
 		}
-	};
 
-	/**
-	 * Animate the pulled job flying from Buffer [0] (x=592, y=176) right into the target Worker card.
-	 */
-	const animateJobToWorker = (job: WaitingJob, workerId: number) => {
-		if (prefersReducedMotion()) return;
-		const layer = document.getElementById('dispatch-flight-layer');
-		if (!layer) return;
-
-		const startX = slotX(0) + 8; // 592
-		const startY = 140 + 36; // 176
-		const targetX = 748 + 84; // Worker pill X
-		const targetY = 64 + (workerId - 1) * 60 + 9; // Worker pill Y
-
-		const flyer = document.createElementNS(SVG_NS, 'g');
-		const rect = document.createElementNS(SVG_NS, 'rect');
-		rect.setAttribute('x', '0');
-		rect.setAttribute('y', '0');
-		rect.setAttribute('width', '80');
-		rect.setAttribute('height', '192');
-		rect.setAttribute('rx', '4');
-		rect.setAttribute('fill', toneFill(job.tone));
-		rect.setAttribute('stroke', 'var(--ink)');
-		rect.setAttribute('stroke-width', '1.2');
-
-		const label = document.createElementNS(SVG_NS, 'text');
-		label.setAttribute('x', '10');
-		label.setAttribute('y', '32');
-		label.setAttribute('fill', toneInk(job.tone));
-		label.setAttribute('font-family', 'var(--font-mono)');
-		label.setAttribute('font-size', '12');
-		label.setAttribute('font-weight', '700');
-		label.textContent = job.id;
-
-		flyer.appendChild(rect);
-		flyer.appendChild(label);
-		layer.appendChild(flyer);
-
-		if (typeof flyer.animate === 'function') {
-			const anim = flyer.animate(
+		function exit(el: HTMLElement, rect: DOMRect, base: DOMRect) {
+			placeInLayer(el, rect, base);
+			const anim = el.animate(
 				[
-					{
-						transform: `translate(${startX}px, ${startY}px) scale(1, 1)`,
-						opacity: 0.95,
-					},
-					{
-						transform: `translate(${targetX}px, ${targetY}px) scale(0.18, 0.08)`,
-						opacity: 0.15,
-					},
+					{ opacity: 1, transform: 'none' },
+					{ opacity: 0, transform: 'scale(0.96)' },
 				],
-				{
-					duration: 260,
-					easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-				}
+				{ duration: FAST_MS, easing: EASE_OUT, fill: 'forwards' },
 			);
-			anim.onfinish = () => flyer.remove();
-		} else {
-			setTimeout(() => flyer.remove(), 260);
-		}
-	};
-
-	const enqueueRandomJob = (customDuration?: number, retryOf?: { id: string; retryCount: number; tone: JobTone }) => {
-		if (state.waitingJobs.length >= state.bufferCapacity) {
-			state.statusNote = 'Channel full (backpressure)';
-			const channelBox = document.getElementById('channel-box');
-			channelBox?.setAttribute('stroke', 'var(--job-coral)');
-			setTimeout(() => {
-				channelBox?.setAttribute('stroke', 'var(--go-blue)');
-			}, 450);
-			render();
-			return false;
+			anim.finished.then(() => el.remove()).catch(() => el.remove());
 		}
 
-		const durationSec = customDuration ?? Math.floor(Math.random() * 10) + 1;
-		const jobNum = state.nextJobNumber++;
-		const tone = retryOf ? retryOf.tone : TONES[jobNum % TONES.length];
-		const id = retryOf ? retryOf.id : `Job ${jobNum}`;
-		const retryCount = retryOf ? retryOf.retryCount : 0;
-		const newSlot = state.waitingJobs.length;
+		/**
+		 * Move the DOM to match the state. `first` holds packet rects measured BEFORE the change.
+		 * Every key ends in exactly one dock; flyers and exits live only in the flight layer.
+		 */
+		function reconcile(first: Map<string, DOMRect>, animate: boolean) {
+			const want = placements();
+			const wanted = new Set(want.map((p) => p.key));
+			const base = layer.getBoundingClientRect();
+			const outletDock = docks.get('outlet')!;
 
-		state.waitingJobs.push({
-			id,
-			slot: newSlot,
-			durationSec,
-			tone,
-			retryCount,
-		});
-		reindexQueue();
-		if (newSlot === 0) {
-			state.enqueueCooldownSec = 0.28;
-		}
-		state.statusNote = retryOf ? `Re-queued ${id} (retry ${retryCount}/2)` : `Enqueued ${id} (${durationSec}s)`;
-		render();
-		animateJobEnqueue(newSlot);
-		return true;
-	};
-
-	const dispatchWaitingJobs = () => {
-		if (state.enqueueCooldownSec > 0) return;
-		let pulledCount = 0;
-		for (let i = 0; i < state.workerCount; i++) {
-			const worker = state.workers[i];
-			if (worker.status === 'IDLE' && state.waitingJobs.length > 0) {
-				const nextJob = state.waitingJobs.shift()!;
-				reindexQueue();
-				pulledCount += 1;
-				worker.status = 'BUSY';
-				worker.jobId = nextJob.id;
-				worker.durationSec = nextJob.durationSec;
-				worker.elapsedSec = 0;
-				worker.remainingSec = nextJob.durationSec;
-				worker.progressPct = 0;
-				worker.tone = nextJob.tone;
-				worker.retryCount = nextJob.retryCount ?? 0;
-				state.statusNote = `Worker ${worker.id} pulled ${nextJob.id} from Buffer [0]`;
-				animateJobToWorker(nextJob, worker.id);
-			}
-		}
-		if (pulledCount > 0) {
-			render();
-			if (state.waitingJobs.length > 0) {
-				animateQueueShiftRight(state.waitingJobs.length);
-			}
-		}
-	};
-
-	const stepSimulation = (dtSec: number) => {
-		if (state.enqueueCooldownSec > 0) {
-			state.enqueueCooldownSec = Math.max(0, state.enqueueCooldownSec - dtSec);
-		}
-
-		// 1. Pull waiting jobs from Buffer [0] into any idle active workers
-		dispatchWaitingJobs();
-
-		// 2. Advance active workers
-		for (let i = 0; i < 6; i++) {
-			const worker = state.workers[i];
-
-			if (worker.status === 'TIMEOUT') {
-				worker.timeoutFlashSec -= dtSec;
-				if (worker.timeoutFlashSec <= 0) {
-					worker.status = 'IDLE';
-					worker.jobId = null;
-					worker.durationSec = 0;
-					worker.remainingSec = 0;
-					worker.elapsedSec = 0;
-					worker.progressPct = 0;
-				}
-				continue;
+			for (const [key, el] of [...packets]) {
+				if (wanted.has(key)) continue;
+				packets.delete(key);
+				cancelFlight(key);
+				const rect = first.get(key);
+				if (animate && rect && rect.width > 0) exit(el, rect, base);
+				else el.remove();
 			}
 
-			if (worker.status !== 'BUSY' || !worker.jobId) continue;
+			type Plan = { key: string; kind: 'stay' | 'shift' | 'fly' | 'enter'; old?: HTMLElement };
+			const plans: Plan[] = [];
+			const byDock = new Map<string, HTMLElement[]>();
 
-			worker.elapsedSec += dtSec;
-			worker.remainingSec = Math.max(0, worker.durationSec - worker.elapsedSec);
-			worker.progressPct = Math.min(100, Math.round((worker.elapsedSec / worker.durationSec) * 100));
-
-			// Check resilience context deadline
-			if (
-				state.resilienceEnabled &&
-				worker.durationSec > state.timeoutSec &&
-				worker.elapsedSec >= state.timeoutSec
-			) {
-				const timedOutId = worker.jobId;
-				const prevRetry = worker.retryCount ?? 0;
-				const prevTone = worker.tone;
-
-				state.timedOutJobs += 1;
-				worker.status = 'TIMEOUT';
-				worker.timeoutFlashSec = 0.75;
-				worker.remainingSec = 0;
-
-				if (prevRetry < 2 && state.waitingJobs.length < state.bufferCapacity) {
-					const retryDuration = Math.max(2, Math.min(state.timeoutSec - 1, Math.ceil(worker.durationSec / 2)));
-					enqueueRandomJob(retryDuration, {
-						id: timedOutId,
-						retryCount: prevRetry + 1,
-						tone: prevTone,
-					});
+			for (const p of want) {
+				let el = packets.get(p.key);
+				let plan: Plan;
+				if (!el) {
+					el = buildPacket(p);
+					plan = { key: p.key, kind: 'enter' };
+				} else if (el.dataset.dock === p.dockId && el.dataset.variant === p.variant) {
+					plan = { key: p.key, kind: 'stay' };
+				} else if (el.dataset.variant === 'slot' && p.variant === 'slot') {
+					plan = { key: p.key, kind: 'shift' };
 				} else {
-					state.statusNote = `${timedOutId} timed out (${state.timeoutSec}s ctx)`;
+					cancelFlight(p.key);
+					const old = el;
+					el = buildPacket(p);
+					plan = { key: p.key, kind: 'fly', old };
 				}
-				continue;
+				applyPacket(el, p);
+				packets.set(p.key, el);
+				plans.push(plan);
+				const list = byDock.get(p.dockId) ?? [];
+				list.push(el);
+				byDock.set(p.dockId, list);
 			}
 
-			// Normal job completion
-			if (worker.elapsedSec >= worker.durationSec) {
-				const finishedId = worker.jobId;
-				state.completedJobs += 1;
-				worker.status = 'IDLE';
-				worker.jobId = null;
-				worker.durationSec = 0;
-				worker.remainingSec = 0;
-				worker.elapsedSec = 0;
-				worker.progressPct = 0;
-				state.statusNote = `${finishedId} completed`;
-			}
-		}
-
-		// 3. Immediately pull from Buffer [0] if a worker just became IDLE
-		dispatchWaitingJobs();
-
-		// 4. Optional auto-feed
-		if (state.autoFeed && state.running) {
-			state.autoFeedTimerSec += dtSec;
-			if (state.autoFeedTimerSec >= 1.8) {
-				state.autoFeedTimerSec = 0;
-				if (state.waitingJobs.length < state.bufferCapacity) {
-					enqueueRandomJob();
-					dispatchWaitingJobs();
-				}
-			}
-		}
-
-		render();
-	};
-
-	const render = () => {
-		const bufferEl = document.getElementById('readout-buffer');
-		const workersEl = document.getElementById('readout-workers');
-		const completedEl = document.getElementById('readout-completed');
-		const timeoutsEl = document.getElementById('readout-timeouts');
-		const stateEl = document.getElementById('readout-state');
-		const bannerEl = document.getElementById('chart-banner');
-		const runBtn = document.getElementById('ctrl-run');
-
-		const busyCount = state.workers
-			.slice(0, state.workerCount)
-			.filter((w) => w.status === 'BUSY' || w.status === 'TIMEOUT').length;
-
-		if (bufferEl) bufferEl.textContent = `${state.waitingJobs.length} / ${state.bufferCapacity}`;
-		if (workersEl) workersEl.textContent = `${busyCount} / ${state.workerCount}`;
-		if (completedEl) completedEl.textContent = String(state.completedJobs);
-		if (timeoutsEl) timeoutsEl.textContent = String(state.timedOutJobs);
-		if (stateEl) stateEl.textContent = state.running ? `Running • ${state.statusNote}` : state.statusNote;
-		if (runBtn) runBtn.textContent = state.running ? 'Pause' : 'Start';
-		if (bannerEl) {
-			const ctxText = state.resilienceEnabled ? `${state.timeoutSec}s` : 'OFF';
-			bannerEl.textContent = `WORKER POOL HARBOR CHART // CHANNEL BUFFER CAP = ${state.bufferCapacity} // WORKERS = ${state.workerCount} // CTX TIMEOUT = ${ctxText}`;
-		}
-
-		for (let slot = 0; slot < 6; slot++) {
-			const slotGroup = document.querySelector<SVGGElement>(`[data-slot="${slot}"]`);
-			const jobGroup = document.querySelector<SVGGElement>(`[data-job="${slot}"]`);
-			const jobRect = document.querySelector<SVGRectElement>(`[data-job-rect="${slot}"]`);
-			const jobId = document.querySelector<SVGTextElement>(`[data-job-id="${slot}"]`);
-			const jobTime = document.querySelector<SVGTextElement>(`[data-job-time="${slot}"]`);
-			const jobTag = document.querySelector<SVGTextElement>(`[data-job-tag="${slot}"]`);
-			const job = state.waitingJobs.find((j) => j.slot === slot);
-			const withinCap = slot < state.bufferCapacity;
-
-			if (slotGroup) {
-				slotGroup.style.opacity = withinCap ? '1' : '0.25';
-			}
-			if (!jobGroup || !jobRect || !jobId || !jobTime) continue;
-
-			if (job && withinCap) {
-				jobGroup.style.opacity = '1';
-				jobRect.setAttribute('fill', toneFill(job.tone));
-				jobId.setAttribute('fill', toneInk(job.tone));
-				jobTime.setAttribute('fill', toneInk(job.tone));
-				jobId.textContent = job.id;
-				jobTime.textContent = `${job.durationSec}s work`;
-				if (jobTag) {
-					jobTag.setAttribute('fill', toneInk(job.tone));
-					if (job.retryCount && job.retryCount > 0) {
-						jobTag.textContent = `retry ${job.retryCount}/2`;
-					} else if (state.resilienceEnabled && job.durationSec > state.timeoutSec) {
-						jobTag.textContent = `>${state.timeoutSec}s timeout`;
-					} else {
-						jobTag.textContent = 'queued';
+			// Cancel leftover slide animations so the Last rects are measured without transforms.
+			if (animate) {
+				for (const plan of plans) {
+					if ((plan.kind === 'stay' || plan.kind === 'shift') && !flights.has(plan.key)) {
+						packets.get(plan.key)!.getAnimations().forEach((a) => a.cancel());
 					}
 				}
-			} else {
-				jobGroup.style.opacity = '0';
-				jobId.textContent = '';
-				jobTime.textContent = '';
-				if (jobTag) jobTag.textContent = '';
 			}
-		}
 
-		for (let idx = 0; idx < 6; idx++) {
-			const worker = state.workers[idx];
-			const isActive = idx < state.workerCount;
-			const workerGroup = document.querySelector<SVGGElement>(`[data-worker="${worker.id}"]`);
-			const connector = document.querySelector<SVGLineElement>(`[data-connector="${worker.id}"]`);
-			const card = document.querySelector<SVGRectElement>(`[data-worker-card="${worker.id}"]`);
-			const pill = document.querySelector<SVGRectElement>(`[data-worker-pill="${worker.id}"]`);
-			const status = document.querySelector<SVGTextElement>(`[data-worker-status="${worker.id}"]`);
-			const jobLabel = document.querySelector<SVGTextElement>(`[data-worker-job="${worker.id}"]`);
-			const progress = document.querySelector<SVGRectElement>(`[data-progress="${worker.id}"]`);
-			const isBusy = worker.status === 'BUSY';
-			const isTimeout = worker.status === 'TIMEOUT';
+			for (const [dockId, dock] of docks) {
+				const kids = byDock.get(dockId) ?? [];
+				const same = dock.children.length === kids.length && kids.every((el, i) => dock.children[i] === el);
+				if (!same) dock.replaceChildren(...kids);
+			}
 
-			if (workerGroup) {
-				workerGroup.style.opacity = isActive ? '1' : '0.24';
+			if (!animate) {
+				for (const plan of plans) plan.old?.remove();
+				return;
 			}
-			if (connector) {
-				connector.style.opacity = isActive ? '1' : '0.2';
-			}
-			if (card) {
-				const strokeColor = isTimeout
-					? 'var(--job-coral)'
-					: isBusy
-						? 'var(--worker-busy)'
-						: 'var(--line)';
-				card.setAttribute('stroke', strokeColor);
-				card.setAttribute('stroke-width', isBusy || isTimeout ? '2' : '1.5');
-			}
-			if (pill) {
-				pill.style.opacity = isActive && (isBusy || isTimeout) ? '1' : '0';
-				pill.setAttribute('fill', isTimeout ? 'var(--job-coral)' : toneFill(worker.tone));
-			}
-			if (status) {
-				status.textContent = isActive ? worker.status : 'OFF';
-				const statusFill = isTimeout
-					? 'var(--job-coral)'
-					: isBusy
-						? 'var(--worker-busy)'
-						: 'var(--worker-idle)';
-				status.setAttribute('fill', statusFill);
-			}
-			if (jobLabel) {
-				if (!isActive) {
-					jobLabel.textContent = 'Offline';
-				} else if (isTimeout && worker.jobId) {
-					jobLabel.textContent = `${worker.jobId} • CTX TIMEOUT (${state.timeoutSec}s)`;
-				} else if (isBusy && worker.jobId) {
-					const retrySuffix = worker.retryCount ? ` [r${worker.retryCount}]` : '';
-					jobLabel.textContent = `${worker.jobId}${retrySuffix} • ${worker.remainingSec.toFixed(1)}s left (${worker.progressPct}%)`;
+
+			const outletRect = outletDock.getBoundingClientRect();
+			const lasts = new Map(plans.map((plan) => [plan.key, packets.get(plan.key)!.getBoundingClientRect()]));
+
+			for (const plan of plans) {
+				const el = packets.get(plan.key)!;
+				const to = lasts.get(plan.key)!;
+				const from = first.get(plan.key);
+				if (to.width === 0) {
+					plan.old?.remove();
+					continue;
+				}
+				if (plan.kind === 'stay' || plan.kind === 'shift') {
+					if (from && from.width > 0 && !flights.has(plan.key)) shift(el, from, to);
+				} else if (plan.kind === 'fly') {
+					if (from && from.width > 0) fly(plan.key, plan.old!, from, el, to, base);
+					else {
+						plan.old!.remove();
+						appear(el);
+					}
+				} else if (el.dataset.dock === 'outlet' || outletRect.width === 0) {
+					appear(el);
 				} else {
-					jobLabel.textContent = 'Waiting on <-jobs';
+					// A new job leaves the producer outlet as a row packet, then lands in its dock.
+					const p = want.find((w) => w.key === plan.key)!;
+					const flyer = buildPacket({ ...p, variant: 'row', status: null });
+					const fromRect = new DOMRect(outletRect.left, outletRect.top + (outletRect.height - 28) / 2, outletRect.width, 28);
+					fly(plan.key, flyer, fromRect, el, to, base, true);
 				}
 			}
-			if (progress) {
-				const width = Math.round((worker.progressPct / 100) * 316);
-				progress.setAttribute('width', String(width));
-				progress.setAttribute('fill', isTimeout ? 'var(--job-coral)' : 'var(--go-cyan)');
+		}
+
+		/* ================================================================ */
+		/* Chrome (structure and text)                                      */
+		/* ================================================================ */
+
+		function renderChrome() {
+			const cap = pool.capacity;
+			const len = pool.buffer.length;
+			const blocked = producerBlocked(pool);
+
+			setData(root, 'mode', pool.mode);
+			setData(root, 'running', String(running));
+			setText(hintEl, hint);
+			setText(runLabel, running ? 'Running' : 'Paused');
+			setText(runText, running ? 'Pause' : 'Run');
+
+			for (const input of all<HTMLInputElement>('input[name="pool-mode"]')) input.checked = input.value === pool.mode;
+
+			setData(channelEl, 'cap', String(cap));
+			setData(channelEl, 'full', String((cap > 0 && len >= cap) || pool.sendq.length > 0));
+			channelEl.style.setProperty('--cap', String(Math.max(cap, 1)));
+			for (const el of slotEls) el.hidden = Number(el.dataset.slot) >= cap;
+			for (const el of gaugeBars) {
+				const i = Number(el.dataset.gauge);
+				el.hidden = i >= cap;
+				setData(el, 'on', String(i < len));
+			}
+			setText(capCode, `jobs := make(chan Job, ${cap})`);
+			setText(gaugeText, `len ${len} / cap ${cap}`);
+			setText(ctxCode, `context.WithTimeout(ctx, ${pool.timeoutSec}*time.Second)`);
+
+			pool.workers.forEach((w, i) => {
+				const view = worker[i];
+				setData(view.el, 'state', w.phase);
+				setData(view.el, 'alert', w.alertKind ?? '');
+				setData(view.el, 'exiting', String(w.exiting));
+				const pill =
+					w.phase === 'alert'
+						? w.alertKind === 'error'
+							? 'Error'
+							: 'Timeout'
+						: w.exiting
+							? 'Draining'
+							: w.phase === 'busy'
+								? 'Busy'
+								: w.phase === 'idle'
+									? 'Idle'
+									: 'Offline';
+				setText(view.pill, pill);
+			});
+			setText(workersMeta, `${busyCount(pool)}/${onlineCount(pool)} busy`);
+
+			setData(outletEl, 'blocked', String(blocked));
+			setData(sendButton, 'rejected', 'false');
+			autoSwitch.setAttribute('aria-checked', String(pool.autoSend));
+
+			const backoffItems = pool.backoffs.length + pool.sendq.filter((s) => s.from === 'retry').length;
+			const failedCount = pool.counts.failed;
+			setText(counts.backoff, String(backoffItems));
+			setText(counts.done, String(pool.counts.done));
+			setText(counts.failed, String(failedCount));
+			setData(trays.backoff, 'hasItems', String(backoffItems > 0));
+			setData(trays.failed, 'hasItems', String(failedCount > 0));
+
+			const core = pool.mode === 'core';
+			setData(contextDeck, 'disabled', String(core));
+			inputs.timeout.disabled = core;
+			inputs.spike.disabled = core;
+			setText(
+				contextNote,
+				core ? 'Core mode has no deadlines. Switch to Resilience to use these.' : 'Applies to the next attempt. A running attempt keeps its deadline.',
+			);
+			renderText();
+		}
+
+		function renderText() {
+			setText(tiles.len, `${pool.buffer.length}/${pool.capacity}`);
+			setText(tiles.busy, `${busyCount(pool)}/${onlineCount(pool)}`);
+			setText(tiles.done, String(pool.counts.done));
+			setText(tiles.retried, String(pool.counts.retried));
+			setText(tiles.timedOut, String(pool.counts.timedOut));
+			setText(tiles.failed, String(pool.counts.failed));
+			setText(clockEl, `t = ${pool.clock.toFixed(1)}s`);
+
+			let note: string;
+			if (producerBlocked(pool)) note = pool.capacity === 0 ? 'waiting for a receiver' : 'blocked on send';
+			else if (!pool.autoSend) note = 'auto-send off';
+			else if (!running) note = 'paused';
+			else note = `next send in ${Math.max(0, pool.sendEverySec - pool.sendTimer).toFixed(1)}s`;
+			setText(outletNote, note);
+
+			pool.workers.forEach((w, i) => {
+				const view = worker[i];
+				let text: string;
+				if (w.phase === 'offline') text = 'Not started';
+				else if (w.phase === 'idle') text = 'Waiting on <-jobs';
+				else if (w.phase === 'alert') text = w.alertKind === 'error' ? `err: ${JOB_TYPES[w.job!.type].errorText}` : 'deadline exceeded';
+				else if (w.exiting) text = 'Exits after this job';
+				else {
+					const job = w.job!;
+					const e = w.elapsed.toFixed(1);
+					if (w.deadline === null) text = `${e}s / ${job.workSec}s`;
+					else if (job.workSec > w.deadline) text = `${e}s · needs ${job.workSec}s`;
+					else if (w.elapsed > job.workSec) text = `${e}s · no reply`;
+					else text = `${e}s of ctx ${w.deadline}s`;
+				}
+				setText(view.note, text);
+			});
+		}
+
+		/** Per-frame updates: meters, retry rings. Text updates run at 10 Hz. */
+		function renderFrame(now: number, forceText = false) {
+			pool.workers.forEach((w, i) => {
+				const view = worker[i];
+				let progress = 0;
+				let tick: number | null = null;
+				let slow = false;
+				if (w.job && (w.phase === 'busy' || w.phase === 'alert')) {
+					if (w.deadline !== null) {
+						progress = w.elapsed / w.deadline;
+						tick = w.job.workSec < w.deadline ? w.job.workSec / w.deadline : null;
+						slow = w.phase === 'busy' && (w.elapsed > w.job.workSec || w.job.workSec > w.deadline);
+					} else {
+						progress = w.elapsed / w.job.workSec;
+					}
+				}
+				view.meter.style.setProperty('--p', clamp(progress, 0, 1).toFixed(4));
+				view.tick.hidden = tick === null;
+				if (tick !== null) view.tick.style.setProperty('--tick', tick.toFixed(4));
+				setData(view.el, 'slow', String(slow));
+			});
+			for (const entry of pool.backoffs) {
+				const el = packets.get(`j${entry.job.id}`);
+				el?.style.setProperty('--ring', clamp((entry.readyAt - pool.clock) / entry.totalSec, 0, 1).toFixed(3));
+			}
+			if (forceText || now - lastTextAt > 100) {
+				lastTextAt = now;
+				renderText();
 			}
 		}
-	};
 
-	let rafId: number | null = null;
-	let lastTs: number | null = null;
-
-	const tick = (ts: number) => {
-		if (!state.running) return;
-		if (lastTs === null) lastTs = ts;
-		const dtSec = Math.min(0.1, (ts - lastTs) / 1000);
-		lastTs = ts;
-		stepSimulation(dtSec);
-		rafId = requestAnimationFrame(tick);
-	};
-
-	const setRunning = (nextRunning: boolean) => {
-		state.running = nextRunning;
-		if (state.running) {
-			state.statusNote = 'Processing jobs';
-			lastTs = null;
-			rafId = requestAnimationFrame(tick);
-		} else {
-			if (rafId !== null) cancelAnimationFrame(rafId);
-			rafId = null;
-			lastTs = null;
-			state.statusNote = 'Paused';
+		function toneOf(event: PoolEvent): Tone {
+			switch (event.kind) {
+				case 'done':
+					return 'ok';
+				case 'timeout':
+				case 'error':
+				case 'failed':
+					return 'alert';
+				case 'blocked':
+				case 'backoff':
+				case 'rejected':
+				case 'worker-exit':
+					return 'warn';
+				default:
+					return 'info';
+			}
 		}
-		render();
-	};
 
-	// Wire controls
-	const select = document.getElementById('preset-select') as HTMLSelectElement | null;
-	const runBtn = document.getElementById('ctrl-run') as HTMLButtonElement | null;
-	const addJobBtn = document.getElementById('ctrl-add-job') as HTMLButtonElement | null;
-	const stepBtn = document.getElementById('ctrl-step') as HTMLButtonElement | null;
-	const resetBtn = document.getElementById('ctrl-reset') as HTMLButtonElement | null;
-	const workersInput = document.getElementById('ctrl-workers') as HTMLInputElement | null;
-	const workersOut = document.getElementById('out-workers') as HTMLOutputElement | null;
-	const bufferInput = document.getElementById('ctrl-buffer') as HTMLInputElement | null;
-	const bufferOut = document.getElementById('out-buffer') as HTMLOutputElement | null;
-	const timeoutInput = document.getElementById('ctrl-job-time') as HTMLInputElement | null;
-	const timeoutOut = document.getElementById('out-job-time') as HTMLOutputElement | null;
-	const resilienceInput = document.getElementById('ctrl-resilience') as HTMLInputElement | null;
-	const autoFeedInput = document.getElementById('ctrl-autofeed') as HTMLInputElement | null;
-
-	const loadPreset = (key: PoolState['key']) => {
-		setRunning(false);
-		const preset = POOL_PRESETS[key] ?? POOL_PRESETS.normal;
-		const fresh = cloneFromPreset(preset);
-		Object.assign(state, fresh);
-		if (workersInput) workersInput.value = String(state.workerCount);
-		if (workersOut) workersOut.textContent = String(state.workerCount);
-		if (bufferInput) bufferInput.value = String(state.bufferCapacity);
-		if (bufferOut) bufferOut.textContent = String(state.bufferCapacity);
-		if (timeoutInput) timeoutInput.value = String(state.timeoutSec);
-		if (timeoutOut) timeoutOut.textContent = `${state.timeoutSec}s`;
-		if (resilienceInput) state.resilienceEnabled = resilienceInput.checked;
-		if (autoFeedInput) state.autoFeed = autoFeedInput.checked;
-		render();
-	};
-
-	select?.addEventListener('change', () => {
-		loadPreset(select.value as PoolState['key']);
-	});
-
-	runBtn?.addEventListener('click', () => {
-		setRunning(!state.running);
-	});
-
-	addJobBtn?.addEventListener('click', () => {
-		enqueueRandomJob();
-	});
-
-	stepBtn?.addEventListener('click', () => {
-		if (state.running) setRunning(false);
-		stepSimulation(0.5);
-	});
-
-	resetBtn?.addEventListener('click', () => {
-		const key = (select?.value as PoolState['key']) || 'normal';
-		loadPreset(key);
-	});
-
-	workersInput?.addEventListener('input', () => {
-		state.workerCount = Number(workersInput.value);
-		if (workersOut) workersOut.textContent = String(state.workerCount);
-		dispatchWaitingJobs();
-		render();
-	});
-
-	bufferInput?.addEventListener('input', () => {
-		state.bufferCapacity = Number(bufferInput.value);
-		if (bufferOut) bufferOut.textContent = String(state.bufferCapacity);
-		if (state.waitingJobs.length > state.bufferCapacity) {
-			state.waitingJobs.length = state.bufferCapacity;
+		function pushLog(events: PoolEvent[]) {
+			for (const event of events) {
+				const text = describeEvent(event, pool);
+				if (!text) continue;
+				log.unshift({ t: pool.clock, text, tone: toneOf(event) });
+			}
+			log.length = Math.min(log.length, LOG_SIZE);
+			renderLog();
 		}
-		render();
-	});
 
-	timeoutInput?.addEventListener('input', () => {
-		state.timeoutSec = Number(timeoutInput.value);
-		if (timeoutOut) timeoutOut.textContent = `${state.timeoutSec}s`;
-		render();
-	});
+		function renderLog() {
+			logEl.replaceChildren(
+				...log.map((entry) => {
+					const li = document.createElement('li');
+					li.dataset.tone = entry.tone;
+					const time = document.createElement('time');
+					time.textContent = `${entry.t.toFixed(1)}s`;
+					const span = document.createElement('span');
+					span.textContent = entry.text;
+					span.title = entry.text;
+					li.append(time, span);
+					return li;
+				}),
+			);
+		}
 
-	resilienceInput?.addEventListener('change', () => {
-		state.resilienceEnabled = resilienceInput.checked;
-		render();
-	});
+		/* ================================================================ */
+		/* Commit and loop                                                  */
+		/* ================================================================ */
 
-	autoFeedInput?.addEventListener('change', () => {
-		state.autoFeed = autoFeedInput.checked;
-		render();
-	});
+		function commit(events: PoolEvent[]) {
+			const animate = canAnimate();
+			const first = animate ? measureAll() : new Map<string, DOMRect>();
+			renderChrome();
+			reconcile(first, animate);
+			pushLog(events);
+			if (import.meta.env.DEV) {
+				const problems = checkInvariants(pool);
+				if (problems.length) console.warn('[pool] invariant broken', problems);
+			}
+		}
 
-	render();
+		function fullRender() {
+			cancelAllMotion();
+			renderChrome();
+			reconcile(new Map(), false);
+			renderFrame(performance.now(), true);
+			renderLog();
+		}
+
+		function frame(ts: number) {
+			raf = 0;
+			if (!(running && inView && pageVisible)) return;
+			const dt = lastTs ? Math.min(MAX_FRAME_SEC, (ts - lastTs) / 1000) : 0;
+			lastTs = ts;
+			if (dt > 0) {
+				const events = step(pool, dt);
+				if (events.length) commit(events);
+			}
+			renderFrame(ts);
+			raf = window.requestAnimationFrame(frame);
+		}
+
+		function updateLoop() {
+			const active = running && inView && pageVisible;
+			if (active && !raf) {
+				lastTs = 0;
+				raf = window.requestAnimationFrame(frame);
+			} else if (!active && raf) {
+				window.cancelAnimationFrame(raf);
+				raf = 0;
+			}
+		}
+
+		function setRunning(on: boolean) {
+			running = on;
+			renderChrome();
+			updateLoop();
+		}
+
+		/* ================================================================ */
+		/* Commands                                                         */
+		/* ================================================================ */
+
+		function syncControls() {
+			for (const input of all<HTMLInputElement>('input[name="pool-preset"]')) input.checked = input.value === presetKey;
+			inputs.workers.value = String(pool.workerCount);
+			inputs.buffer.value = String(pool.capacity);
+			inputs.timeout.value = String(pool.timeoutSec);
+			inputs.spike.value = String(Math.round(pool.spikeChance * 100));
+			outputs.workers.textContent = String(pool.workerCount);
+			outputs.buffer.textContent = String(pool.capacity);
+			outputs.timeout.textContent = `${pool.timeoutSec}s`;
+			outputs.spike.textContent = `${Math.round(pool.spikeChance * 100)}%`;
+		}
+
+		function loadPreset(key: PresetKey, message?: string) {
+			presetKey = key;
+			pool = createPool(key);
+			hint = POOL_PRESETS[key].hint;
+			log.length = 0;
+			fullRender();
+			syncControls();
+			announce(message ?? `${POOL_PRESETS[key].label} loaded. ${hint}`);
+		}
+
+		function rebuildWithCapacity(capacity: number) {
+			pool = createPool(presetKey, {
+				mode: pool.mode,
+				capacity,
+				workerCount: pool.workerCount,
+				timeoutSec: pool.timeoutSec,
+				spikeChance: pool.spikeChance,
+				autoSend: pool.autoSend,
+			});
+			log.length = 0;
+			log.unshift({ t: 0, text: `jobs := make(chan Job, ${capacity}): pool restarted`, tone: 'info' });
+			fullRender();
+			syncControls();
+			announce(`Buffer capacity ${capacity}. The pool restarted.`);
+		}
+
+		root.addEventListener('click', (event) => {
+			const target = (event.target as Element).closest<HTMLElement>('[data-action]');
+			if (!target) return;
+			switch (target.dataset.action) {
+				case 'send': {
+					const events = sendJob(pool);
+					commit(events);
+					renderFrame(performance.now(), true);
+					const rejected = events.find((e) => e.kind === 'rejected');
+					if (rejected) {
+						setData(sendButton, 'rejected', 'true');
+						window.clearTimeout(rejectTimer);
+						rejectTimer = window.setTimeout(() => setData(sendButton, 'rejected', 'false'), 900);
+					}
+					const text = events.map((e) => describeEvent(e, pool)).filter(Boolean)[0];
+					if (text) announce(text);
+					break;
+				}
+				case 'auto':
+					setAutoSend(pool, !pool.autoSend);
+					renderChrome();
+					announce(pool.autoSend ? 'Auto-send on' : 'Auto-send off');
+					break;
+				case 'run':
+					setRunning(!running);
+					announce(running ? 'Running' : 'Paused');
+					break;
+				case 'step': {
+					if (running) setRunning(false);
+					const events = step(pool, STEP_SEC);
+					commit(events);
+					renderFrame(performance.now(), true);
+					announce(`t = ${pool.clock.toFixed(1)}s. ${events.length ? describeEvent(events[events.length - 1], pool) ?? '' : 'No change.'}`);
+					break;
+				}
+				case 'reset':
+					loadPreset(presetKey, `${POOL_PRESETS[presetKey].label} reset.`);
+					break;
+			}
+		});
+
+		root.addEventListener('change', (event) => {
+			const input = event.target as HTMLInputElement;
+			if (input.name === 'pool-preset') loadPreset(input.value as PresetKey);
+			else if (input.name === 'pool-mode') {
+				setMode(pool, input.value as Mode);
+				hint = MODE_HINTS[pool.mode];
+				renderChrome();
+				reconcile(new Map(), false);
+				announce(`${input.value === 'core' ? 'Core' : 'Resilience'} mode. Applies to the next attempt.`);
+			} else if (input.dataset.input === 'buffer') rebuildWithCapacity(Number(input.value));
+		});
+
+		root.addEventListener('input', (event) => {
+			const input = event.target as HTMLInputElement;
+			const value = Number(input.value);
+			switch (input.dataset.input) {
+				case 'workers':
+					outputs.workers.textContent = String(value);
+					if (value !== pool.workerCount) commit(setWorkerCount(pool, value));
+					break;
+				case 'buffer':
+					outputs.buffer.textContent = String(value);
+					break;
+				case 'timeout':
+					outputs.timeout.textContent = `${value}s`;
+					setTimeoutSec(pool, value);
+					renderChrome();
+					break;
+				case 'spike':
+					outputs.spike.textContent = `${value}%`;
+					setSpikeChance(pool, value / 100);
+					break;
+			}
+		});
+
+		document.addEventListener('keydown', (event) => {
+			if (event.altKey || event.ctrlKey || event.metaKey) return;
+			const target = event.target as HTMLElement;
+			if (target.closest('input[type="range"], textarea, select, [contenteditable="true"]')) return;
+			const index = ['1', '2', '3', '4'].indexOf(event.key);
+			if (index < 0) return;
+			const key = PRESET_ORDER[index];
+			if (key) loadPreset(key);
+		});
+
+		/* ================================================================ */
+		/* Lifecycle                                                        */
+		/* ================================================================ */
+
+		new IntersectionObserver(
+			(entries) => {
+				inView = entries.some((e) => e.isIntersecting);
+				updateLoop();
+			},
+			{ threshold: 0.05 },
+		).observe(stage);
+
+		document.addEventListener('visibilitychange', () => {
+			pageVisible = document.visibilityState === 'visible';
+			if (!pageVisible) cancelAllMotion();
+			updateLoop();
+		});
+
+		window.addEventListener('resize', () => {
+			if (window.innerWidth === lastWidth) return;
+			lastWidth = window.innerWidth;
+			cancelAllMotion();
+		});
+
+		reducedQuery.addEventListener('change', () => {
+			reduced = reducedQuery.matches;
+			if (reduced) cancelAllMotion();
+		});
+
+		fullRender();
+		syncControls();
+		updateLoop();
+	}
 </script>
