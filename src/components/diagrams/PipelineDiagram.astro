@@ -1,0 +1,108 @@
+---
+/**
+ * PipelineDiagram — Concepts. The four zones as columns, the channel rules as rows.
+ * Each row shows how far one job moves for that rule. The zone labels match the
+ * zone labels in the picture.
+ */
+import Diagram from './Diagram.astro';
+
+const zones = ['01 Producer', '02 Channel', '03 Workers', '04 Results'] as const;
+
+/** `from`/`to` are zone indexes (0–3). The packet sits in zone `to`. */
+const rules: ReadonlyArray<{
+	name: string;
+	when: string;
+	from: number;
+	to: number;
+	packet: 'job' | 'blocked' | 'result';
+	cells: readonly [string, string, string, string];
+}> = [
+	{
+		name: 'Handoff',
+		when: 'A worker is Idle.',
+		from: 0,
+		to: 2,
+		packet: 'job',
+		cells: ['jobs <- job', 'Skipped', 'Idle → Busy', ''],
+	},
+	{
+		name: 'Buffered send',
+		when: 'All workers are Busy. A slot is open.',
+		from: 0,
+		to: 1,
+		packet: 'job',
+		cells: ['jobs <- job', 'Waits at the tail', 'All Busy', ''],
+	},
+	{
+		name: 'Blocked send',
+		when: 'All workers are Busy. The buffer is FULL.',
+		from: 0,
+		to: 0,
+		packet: 'blocked',
+		cells: ['Blocked', 'FULL', 'All Busy', ''],
+	},
+	{
+		name: 'Receive',
+		when: 'A worker finishes a job.',
+		from: 1,
+		to: 3,
+		packet: 'result',
+		cells: ['', 'Slot [0] leaves', 'Takes Slot [0]', 'Done or Failed'],
+	},
+];
+---
+
+<Diagram
+	id="pipeline"
+	title="Where one job goes"
+	caption="A job waits in the buffer only when every worker is Busy. When a worker takes Slot [0], a Blocked producer can send in the same step."
+>
+	<div class="pl" role="table" aria-label="Channel rules by zone">
+		<div class="pl-zones" role="row">
+			<span class="pl-rule-label" role="columnheader">Rule</span>
+			{
+				zones.map((zone) => (
+					<span class="pl-zone" role="columnheader">
+						{zone}
+					</span>
+				))
+			}
+		</div>
+		{
+			rules.map((rule, index) => (
+				<div class="pl-row" role="row" data-rule={rule.name}>
+					<div class="pl-rule" role="rowheader">
+						<strong>
+							{index + 1} {rule.name}
+						</strong>
+						<span>{rule.when}</span>
+					</div>
+					<div class="pl-track">
+						{rule.to > rule.from && (
+							<span
+								class="pl-path"
+								aria-hidden="true"
+								style={`grid-column: ${rule.from + 1} / ${rule.to + 2}; --span: ${rule.to - rule.from + 1};`}
+							/>
+						)}
+						{rule.cells.map((text, zone) => (
+							<span class="pl-cell" role="cell" style={`grid-column: ${zone + 1};`}>
+								<span class="pl-dock" aria-hidden="true">
+									{zone === rule.to && <span class={`pl-packet pl-packet-${rule.packet}`} />}
+								</span>
+								<span class="sr-only">{zones[zone]}: </span>
+								{text === 'FULL' ? (
+									<span class="pl-note pl-full">FULL</span>
+								) : text ? (
+									<span class="pl-note">{text}</span>
+								) : (
+									<span class="sr-only">No change</span>
+								)}
+							</span>
+						))}
+					</div>
+				</div>
+			))
+		}
+	</div>
+</Diagram>

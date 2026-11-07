@@ -2,58 +2,37 @@
 /**
  * HomeTutorial — architectural overview and guide below PoolPicture on the Home page.
  *
- * Uses hairline ledger rows and a real rendered Mermaid diagram rather than nested
+ * Uses hairline ledger rows and one static comparison diagram rather than nested
  * rounded cards. Data arrays stay at the top so layout changes remain easy.
  */
-import MermaidDiagram from './MermaidDiagram.astro';
+import ComparisonDiagram from './diagrams/ComparisonDiagram.astro';
 import { sitePath } from '../lib/site-path';
-import type { PresetKey } from '../lib/pool-presets';
-
-const approaches = [
-	{
-		name: 'Sequential (one by one)',
-		code: 'for _, job := range jobs { process(job) }',
-		burst: '1 worker runs 1 job at a time; 999 jobs wait in a single line.',
-		resources: 'Flat memory, poor throughput',
-	},
-	{
-		name: 'Unbounded (all at once)',
-		code: 'for _, job := range jobs { go process(job) }',
-		burst: '1,000 goroutines start at once and compete for CPU and sockets.',
-		resources: 'Memory spike, database connection exhaustion',
-	},
-	{
-		name: 'Worker pool (bounded)',
-		code: 'jobs := make(chan Job, 6) // + 3 workers',
-		burst: '3 workers run in parallel, 6 slots buffer bursts, sender waits when full.',
-		resources: 'Fast throughput, fixed memory ceiling',
-	},
-] as const;
+import { POOL_PRESETS, type PresetKey } from '../lib/pool-presets';
 
 const zones = [
 	{
 		num: '01',
 		title: 'Producer',
 		code: 'jobs <- job',
-		desc: 'Creates job packets and sends them into the channel. When all workers are busy and all buffer slots are full, the producer waits at the outlet (Blocked).',
+		desc: 'Makes jobs and sends them into the channel. When every worker is Busy and the buffer is full, the producer waits at the outlet (Blocked).',
 	},
 	{
 		num: '02',
-		title: 'Channel & Buffer',
+		title: 'Channel',
 		code: 'jobs := make(chan Job, N)',
-		desc: 'A first-in, first-out conveyor belt with N waiting slots. Slot [0] is the front. If a worker is already Idle, a send skips the buffer completely (Handoff).',
+		desc: 'Holds up to N waiting jobs, first in, first out. Slot [0] is the front. When a worker is Idle, a send goes straight to it and skips the buffer (handoff).',
 	},
 	{
 		num: '03',
 		title: 'Workers',
 		code: 'for job := range jobs',
-		desc: 'A fixed team of 1 to 6 goroutines. Each gopher takes one job at a time and shows its state: Idle, Busy, Alert, Draining, or Offline.',
+		desc: 'A fixed team of 1 to 6 goroutines. Each gopher runs one job at a time. Its pill shows its state: Idle, Busy, Alert, Draining, or Offline.',
 	},
 	{
 		num: '04',
 		title: 'Results',
 		code: 'results <- Result{}',
-		desc: 'Every completed job sends one Result to the Done tray. In Resilience mode, failed attempts wait in Retry backoff and move to Failed after 3 attempts.',
+		desc: 'Each job ends as one result: Done or Failed. In Resilience mode, a failed attempt waits in Retry backoff (zone 01). After 3 attempts the job goes to Failed.',
 	},
 ] as const;
 
@@ -62,131 +41,95 @@ const workloads = [
 		tag: 'EMAIL',
 		tone: 'email',
 		kind: 'I/O-bound network work (1s–2s)',
-		desc: 'Workers wait on an external SMTP server. Running a few in parallel increases throughput without hitting rate limits.',
+		desc: 'Workers wait on a mail server. A few in parallel send more mail without hitting the rate limit.',
 	},
 	{
 		tag: 'WEBHOOK',
 		tone: 'webhook',
 		kind: 'I/O-bound HTTP calls (1s–3s)',
-		desc: 'Customer endpoints can hang or return HTTP 503. Needs a per-attempt context deadline and retry backoff.',
+		desc: 'Customer servers can hang or return HTTP 503. Each attempt needs a deadline and a retry backoff.',
 	},
 	{
 		tag: 'IMG',
 		tone: 'image',
 		kind: 'CPU-bound image work (3s–5s)',
-		desc: 'Resizing images uses heavy CPU and RAM. Bounding the worker count prevents large uploads from starving the server.',
+		desc: 'Resizing uses a lot of CPU and memory. A worker count near the CPU core count keeps large uploads from starving the server.',
 	},
 	{
 		tag: 'SYNC',
 		tone: 'sync',
 		kind: 'Connection-limited DB work (2s–4s)',
-		desc: 'Databases allow only a small pool of active connections. A fixed worker count respects that limit.',
+		desc: 'A database allows only a few open connections. One worker per connection never goes over that limit.',
 	},
 ] as const;
 
-const presets: ReadonlyArray<{
-	key: PresetKey;
-	num: number;
-	title: string;
-	desc: string;
-}> = [
-	{
-		key: 'steady',
-		num: 1,
-		title: 'Steady flow',
-		desc: 'Three workers keep up with the producer. Watch jobs hand off directly to idle workers without waiting in the buffer.',
-	},
-	{
-		key: 'backpressure',
-		num: 2,
-		title: 'Backpressure',
-		desc: 'Two workers are slower than the producer. All 6 slots fill, the FULL badge appears, and the producer blocks on send.',
-	},
-	{
-		key: 'timeouts',
-		num: 3,
-		title: 'Timeout & retry',
-		desc: 'Resilience mode. Slow attempts hit the 4s context deadline, flash Alert, wait in Retry backoff with jitter, and retry.',
-	},
-	{
-		key: 'drain',
-		num: 4,
-		title: 'Drain & idle',
-		desc: 'Auto-send is off. Workers empty the remaining buffer from Slot [0] one by one, then park on <-jobs in Idle state.',
-	},
-];
+const watch: Record<PresetKey, string> = {
+	steady: 'Each new job goes straight to an Idle worker. The buffer stays almost empty.',
+	backpressure: 'All 4 slots fill, FULL appears, and the producer becomes Blocked.',
+	timeouts: 'Slow attempts hit the 4s deadline, flash Alert, wait in Retry backoff, and run again.',
+	drain: 'The producer stops. Workers take Slot [0] until the buffer is empty, then park as Idle.',
+};
 
-const lessons = [
+const extra: Partial<Record<PresetKey, string>> = { timeouts: ' · Resilience', drain: ' · producer off' };
+
+const presets = (Object.keys(watch) as PresetKey[]).map((key) => {
+	const preset = POOL_PRESETS[key];
+	return {
+		key,
+		num: preset.order,
+		title: preset.label,
+		spec: `${preset.workers} workers · buffer ${preset.capacity}${extra[key] ?? ''}`,
+		desc: watch[key],
+	};
+});
+
+const lessonGroups = [
 	{
-		num: 'Lesson 1',
-		stage: 'System Design',
-		title: 'Concepts',
-		href: sitePath('lessons/design/'),
-		desc: 'How the 4 zones, channel buffer rules, handoff, backpressure, and worker states work.',
+		audience: 'For everyone',
+		note: 'No Go needed.',
+		items: [
+			{
+				title: 'Concepts',
+				href: sitePath('lessons/design/'),
+				desc: 'The four zones, the channel rules, backpressure, and the worker states.',
+			},
+			{
+				title: 'Resilience',
+				href: sitePath('lessons/resilience/'),
+				desc: 'Deadlines, retries with backoff and jitter, the dead-letter queue, and common pitfalls.',
+			},
+		],
 	},
 	{
-		num: 'Lesson 2',
-		stage: 'System Design',
-		title: 'Resilience',
-		href: sitePath('lessons/resilience/'),
-		desc: 'Context deadlines, transient errors, retry backoff with jitter, dead-letter queues, and 6 common pitfalls.',
-	},
-	{
-		num: 'Lesson 3',
-		stage: 'Go Concurrency',
-		title: 'Go Syntax',
-		href: sitePath('lessons/syntax/'),
-		desc: 'Goroutines, buffered channels, directional types, range and close, sync.WaitGroup, and select.',
-	},
-	{
-		num: 'Lesson 4',
-		stage: 'Go Implementation',
-		title: 'Build It',
-		href: sitePath('lessons/setup/'),
-		desc: 'A 5-step blueprint to write, shut down cleanly, and race-test the companion Go module in processor/.',
+		audience: 'For engineers',
+		note: 'Go code.',
+		items: [
+			{
+				title: 'Go Syntax',
+				href: sitePath('lessons/syntax/'),
+				desc: 'go, make(chan T, N), send and receive, range and close, sync.WaitGroup, and select.',
+			},
+			{
+				title: 'Build It',
+				href: sitePath('lessons/setup/'),
+				desc: 'A 5-step plan to write, stop cleanly, and race-test the Go module in processor/.',
+			},
+		],
 	},
 ] as const;
 ---
 
 <div class="home-tutorial" data-home-tutorial>
-	<section class="guide-block" data-tutorial-section="why" aria-labelledby="guide-why-title">
+	<section class="guide-block" id="why" data-tutorial-section="why" aria-labelledby="guide-why-title">
 		<div class="guide-intro">
-			<h2 class="guide-heading" id="guide-why-title">Why use a worker pool?</h2>
+			<h2 class="guide-heading" id="guide-why-title">What is a worker pool?</h2>
 			<p class="guide-lead">
-				Applications constantly run background jobs such as sending emails, delivering webhooks, resizing images,
-				and syncing database records. A <strong>worker pool</strong> runs a fixed number of workers pulling from one
-				buffered channel so bursts wait in line instead of crashing the server.
+				Apps run background jobs: they send emails, call webhooks, resize images, and sync database records.
+				A <strong>worker pool</strong> runs these jobs with a fixed number of workers. Extra jobs wait in a buffer. When the
+				buffer is full, the sender waits too. The picture above shows this pool at work.
 			</p>
 		</div>
-
-		<div class="guide-table-wrap">
-			<table class="guide-table">
-				<thead>
-					<tr>
-						<th scope="col">Approach</th>
-						<th scope="col">Go pattern</th>
-						<th scope="col">When 1,000 jobs arrive at once</th>
-						<th scope="col">Resource profile</th>
-					</tr>
-				</thead>
-				<tbody>
-					{
-						approaches.map((row) => (
-							<tr>
-								<th scope="row">{row.name}</th>
-								<td>
-									<code>{row.code}</code>
-								</td>
-								<td>{row.burst}</td>
-								<td>{row.resources}</td>
-							</tr>
-						))
-					}
-				</tbody>
-			</table>
-		</div>
-
-		<MermaidDiagram id="comparison" />
+		<ComparisonDiagram />
 	</section>
 
 	<section class="guide-block guide-two-col" data-tutorial-section="zones" aria-labelledby="guide-zones-title">
@@ -232,55 +175,54 @@ const lessons = [
 		</div>
 	</section>
 
-	<section class="guide-block" data-tutorial-section="try" aria-labelledby="guide-try-title">
-		<div class="guide-intro">
-			<h2 class="guide-heading" id="guide-try-title">Four presets to test in the picture</h2>
-			<p class="guide-sub">
-				Select any preset below to load that starting state into the stage at the top of the page.
-			</p>
+	<section class="guide-block guide-two-col" data-tutorial-section="next" aria-label="Try and read">
+		<div class="guide-col">
+			<h2 class="guide-heading" id="guide-try-title">Try a preset</h2>
+			<p class="guide-sub">Each row loads a starting state into the picture and scrolls up to it.</p>
+			<ul class="guide-ledger guide-actions" aria-labelledby="guide-try-title">
+				{
+					presets.map((p) => (
+						<li>
+							<button type="button" class="guide-action" data-try-preset={p.key}>
+								<span class="guide-ledger-term">
+									<span class="guide-num">{p.num}</span>
+									<strong>{p.title}</strong>
+									<code>{p.spec}</code>
+								</span>
+								<span class="guide-ledger-desc">{p.desc}</span>
+							</button>
+						</li>
+					))
+				}
+			</ul>
 		</div>
 
-		<div class="guide-strip">
-			{
-				presets.map((p) => (
-					<div class="guide-strip-cell">
-						<div class="guide-cell-head">
-							<span class="guide-num">{p.num}</span>
-							<strong class="guide-cell-title">{p.title}</strong>
+		<div class="guide-col">
+			<h2 class="guide-heading" id="guide-lessons-title">Read the lessons</h2>
+			<p class="guide-sub">Start with the first two. The last two show the Go code.</p>
+			<nav class="guide-ledger guide-actions" aria-labelledby="guide-lessons-title">
+				{
+					lessonGroups.map((group) => (
+						<div class="guide-group">
+							<p class="guide-group-head">
+								<strong>{group.audience}</strong> {group.note}
+							</p>
+							{group.items.map((l) => (
+								<a class="guide-action" href={l.href}>
+									<span class="guide-ledger-term">
+										<strong>{l.title}</strong>
+										<span class="guide-go" aria-hidden="true">
+											→
+										</span>
+									</span>
+									<span class="guide-ledger-desc">{l.desc}</span>
+								</a>
+							))}
 						</div>
-						<p class="guide-cell-desc">{p.desc}</p>
-						<button type="button" class="btn guide-load-btn" data-try-preset={p.key}>
-							Load preset {p.num}
-						</button>
-					</div>
-				))
-			}
+					))
+				}
+			</nav>
 		</div>
-	</section>
-
-	<section class="guide-block" data-tutorial-section="lessons" aria-labelledby="guide-lessons-title">
-		<div class="guide-intro">
-			<h2 class="guide-heading" id="guide-lessons-title">Lessons: from system design to Go code</h2>
-			<p class="guide-sub">
-				Lessons 1 and 2 explain the architecture and failure handling for everyone. Lessons 3 and 4 cover Go
-				concurrency syntax and building the companion module in <code>processor/</code>.
-			</p>
-		</div>
-
-		<nav class="guide-strip" aria-label="Course lessons">
-			{
-				lessons.map((l) => (
-					<a class="guide-strip-cell guide-lesson-cell" href={l.href}>
-						<div class="guide-lesson-meta">
-							<span>{l.num}</span>
-							<span>{l.stage}</span>
-						</div>
-						<strong class="guide-cell-title">{l.title}</strong>
-						<p class="guide-cell-desc">{l.desc}</p>
-					</a>
-				))
-			}
-		</nav>
 	</section>
 </div>
 
@@ -296,7 +238,8 @@ const lessons = [
 				radio.dispatchEvent(new Event('change', { bubbles: true }));
 			}
 			const stage = document.getElementById('pool-title');
-			stage?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+			const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+			stage?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
 		});
 	});
 </script>

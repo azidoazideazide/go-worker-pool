@@ -109,7 +109,7 @@ export const POOL_PRESETS: Record<PresetKey, PoolPreset> = {
 		order: 1,
 		label: 'Steady flow',
 		mode: 'core',
-		hint: 'Workers keep up with the producer. A parked worker takes each new job at once, so the buffer stays almost empty.',
+		hint: 'Jobs move left to right. Three workers keep up with the producer, so each new job goes straight to an Idle worker and the buffer stays almost empty.',
 		workers: 3,
 		capacity: 6,
 		timeoutSec: 4,

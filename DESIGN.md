@@ -15,12 +15,13 @@ The site is a precision Go runtime telemetry board with a light nautical-technic
   1. **Stage** (the picture): four numbered zones that show the pipeline.
   2. **Readout**: telemetry tiles and a short event log.
   3. **Controls**: decks for presets, run, pool size, and context.
-- Below the controls on the home page, a modular tutorial section (`HomeTutorial.astro`) introduces what a worker pool is, compares **Sequential**, **Unbounded**, and **Worker pool** execution, maps the four zones, and links to the four presets and lessons.
+- Below the controls on the home page, a modular tutorial section (`HomeTutorial.astro`) introduces what a worker pool is, compares **Sequential**, **Unbounded**, and **Worker pool** execution in one diagram (12 jobs, the picture's default 3 workers and buffer of 6), maps the four zones, and links to the four presets and lessons.
 - The picture is the hero in the first view. Do not put a marketing hero above it.
 - Inside the picture frame, one short hint line is permitted in the stage head, above the zones. The hint changes with the preset.
+- The stage title row has one text link, "What is a worker pool?", to the plain-words guide (`#why`) below the picture. It is the only way into the guide from the first view.
 - Every label uses the words in `GLOSSARY.md`.
 - Each zone shows a small Go code caption, for example `jobs := make(chan Job, 6)`. The caption tells the visitor which Go line the zone shows.
-- Each lesson page uses a quiet reading column (`--reading-max`, `42rem`) with short Go snippets and token-styled Mermaid schematic diagrams (`MermaidDiagram.astro`).
+- Each lesson page uses a quiet reading column (`--reading-max`, `42rem`) with short Go snippets and static HTML and CSS teaching diagrams (`src/components/diagrams/`). They render at build time, need no JavaScript or third-party library, and keep real text sizes on a 390px phone. A lesson places one with an HTML comment such as `<!-- diagram: pipeline -->`.
 
 ## 2. Layout
 

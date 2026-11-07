@@ -9,7 +9,7 @@ This document gives the short rules for the visual system, the Go color tokens, 
 - Each worker is an SVG Go gopher. Its pose shows the worker state.
 - Every label uses the words in `GLOSSARY.md`.
 - Inside the picture frame, one hint line in the stage head is permitted.
-- Each lesson page uses a quiet reading column (`--reading-max`, `42rem`) and may include token-styled Mermaid schematic diagrams (`MermaidDiagram.astro`).
+- Each lesson page uses a quiet reading column (`--reading-max`, `42rem`) and may include static HTML and CSS teaching diagrams (`src/components/diagrams/`). They render at build time, need no JavaScript or third-party library, and keep real text sizes on a 390px phone. A lesson places one with an HTML comment such as `<!-- diagram: pipeline -->`. Do not load a diagram library from a CDN.
 
 ## 2. Go Color Palette (Light Mode and Dark Mode)
 
