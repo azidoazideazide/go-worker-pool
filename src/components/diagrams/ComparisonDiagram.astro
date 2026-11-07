@@ -1,0 +1,103 @@
+---
+/**
+ * ComparisonDiagram — Overview. The same burst of 12 jobs, run three ways.
+ * Each square is one job. The pool row uses the picture's default preset
+ * (3 workers, buffer of 6), so the numbers match the stage above.
+ */
+import Diagram from './Diagram.astro';
+
+type Mark = 'run' | 'wait' | 'blocked' | 'over' | 'later';
+
+const rows: ReadonlyArray<{
+	name: string;
+	code: string;
+	groups: ReadonlyArray<{ n: number; mark: Mark; label: string }>;
+	result: string;
+	verdict: string;
+	tone: 'slow' | 'bad' | 'good';
+}> = [
+	{
+		name: 'Sequential',
+		code: 'for _, job := range jobs { process(job) }',
+		groups: [
+			{ n: 1, mark: 'run', label: '1 runs' },
+			{ n: 11, mark: 'wait', label: '11 wait in line' },
+		],
+		verdict: 'Safe, but slow',
+		result: 'One slow IMG job holds up every email behind it.',
+		tone: 'slow',
+	},
+	{
+		name: 'Unbounded',
+		code: 'for _, job := range jobs { go process(job) }',
+		groups: [{ n: 12, mark: 'over', label: '12 goroutines start at once' }],
+		verdict: 'Fast, until it breaks',
+		result: 'With 1,000 jobs, 1,000 goroutines start. Memory and database connections run out.',
+		tone: 'bad',
+	},
+	{
+		name: 'Worker pool',
+		code: 'jobs := make(chan Job, 6) // 3 workers',
+		groups: [
+			{ n: 3, mark: 'run', label: '3 workers' },
+			{ n: 6, mark: 'wait', label: '6 buffer slots' },
+			{ n: 1, mark: 'blocked', label: 'Blocked' },
+			{ n: 2, mark: 'later', label: 'not sent yet' },
+		],
+		verdict: 'Steady, with a ceiling',
+		result: 'At most 3 jobs run and 6 wait. When the buffer is full, the producer waits (backpressure).',
+		tone: 'good',
+	},
+];
+
+const legend: ReadonlyArray<{ mark: Mark; label: string }> = [
+	{ mark: 'run', label: 'Busy' },
+	{ mark: 'wait', label: 'Waiting' },
+	{ mark: 'blocked', label: 'Blocked' },
+	{ mark: 'over', label: 'Overload' },
+];
+---
+
+<Diagram
+	id="comparison"
+	title="12 jobs arrive at once"
+	caption="Each square is one job. The worker pool row uses the picture's default: 3 workers and a buffer of 6."
+>
+	<ul class="dg-legend" slot="legend" aria-label="Legend">
+		{
+			legend.map((item) => (
+				<li>
+					<span class={`cmp-mark cmp-${item.mark}`} aria-hidden="true" />
+					{item.label}
+				</li>
+			))
+		}
+	</ul>
+	<ol class="cmp">
+		{
+			rows.map((row) => (
+				<li class="cmp-row" data-tone={row.tone}>
+					<div class="cmp-name">
+						<strong>{row.name}</strong>
+						<code>{row.code}</code>
+					</div>
+					<div class="cmp-lane">
+						{row.groups.map((g) => (
+							<span class={`cmp-group cmp-group-${g.mark}`}>
+								<span class="cmp-marks" aria-hidden="true">
+									{Array.from({ length: g.n }, () => (
+										<span class={`cmp-mark cmp-${g.mark}`} />
+									))}
+								</span>
+								<span class="cmp-count">{g.mark === 'blocked' || g.mark === 'later' ? `${g.n} ${g.label}` : g.label}</span>
+							</span>
+						))}
+					</div>
+					<p class="cmp-result">
+						<strong>{row.verdict}.</strong> {row.result}
+					</p>
+				</li>
+			))
+		}
+	</ol>
+</Diagram>

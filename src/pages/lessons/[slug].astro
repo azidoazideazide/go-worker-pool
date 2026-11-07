@@ -1,7 +1,9 @@
 ---
-import { getCollection, render } from 'astro:content';
+import { getCollection } from 'astro:content';
 import Base from '../../layouts/Base.astro';
-import MermaidDiagram from '../../components/MermaidDiagram.astro';
+import PipelineDiagram from '../../components/diagrams/PipelineDiagram.astro';
+import StatesDiagram from '../../components/diagrams/StatesDiagram.astro';
+import ResilienceDiagram from '../../components/diagrams/ResilienceDiagram.astro';
 import { sitePath } from '../../lib/site-path';
 
 export async function getStaticPaths() {
@@ -13,7 +15,16 @@ export async function getStaticPaths() {
 }
 
 const { lesson, prev, next } = Astro.props;
-const { Content } = await render(lesson);
+// Lessons mark a diagram with an HTML comment such as `<!-- diagram: pipeline -->`.
+// The page splits the rendered lesson at each marker and places the static
+// diagram there at build time, so no script runs and nothing flashes.
+const diagrams = { pipeline: PipelineDiagram, states: StatesDiagram, resilience: ResilienceDiagram } as const;
+type DiagramId = keyof typeof diagrams;
+const html = lesson.rendered?.html ?? '';
+const parts = html.split(/<!--\s*diagram:\s*(\w+)\s*-->/);
+const pieces: Array<{ html: string } | { diagram: DiagramId }> = parts.map((part, index) =>
+	index % 2 === 1 && part in diagrams ? { diagram: part as DiagramId } : { html: index % 2 === 1 ? '' : part },
+);
 const kicker = lesson.data.stage
 	? `Lesson ${lesson.data.order} · ${lesson.data.stage}`
 	: `Lesson ${lesson.data.order}`;
@@ -24,19 +35,16 @@ const kicker = lesson.data.stage
 		<p class="lesson-kicker">{kicker}</p>
 		<h1>{lesson.data.title}</h1>
 		<p class="lesson-lead">{lesson.data.description}</p>
-		<div class="prose" data-lesson-prose>
-			<Content />
-		</div>
-		<div hidden data-mermaid-stash>
-			<div data-mermaid-tpl="pipeline">
-				<MermaidDiagram id="pipeline" />
-			</div>
-			<div data-mermaid-tpl="states">
-				<MermaidDiagram id="states" />
-			</div>
-			<div data-mermaid-tpl="resilience">
-				<MermaidDiagram id="resilience" />
-			</div>
+		<div class="prose">
+			{
+				pieces.map((piece) => {
+					if ('diagram' in piece) {
+						const Figure = diagrams[piece.diagram];
+						return <Figure />;
+					}
+					return <Fragment set:html={piece.html} />;
+				})
+			}
 		</div>
 		<nav class="lesson-pager" aria-label="Lessons">
 			{

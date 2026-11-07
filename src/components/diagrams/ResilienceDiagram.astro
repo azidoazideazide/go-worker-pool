@@ -1,0 +1,66 @@
+---
+/**
+ * ResilienceDiagram — Resilience. One attempt, start to end.
+ * Matches src/lib/pool-engine.ts: a retry waits in Retry backoff (zone 01), then
+ * goes through the same send rules as a new job (handoff, buffer, or Blocked).
+ */
+import Diagram from './Diagram.astro';
+---
+
+<Diagram
+	id="resilience"
+	title="One attempt, start to end"
+	caption="The worker does not wait during backoff. It takes the next job while the retry waits in zone 01."
+>
+	<ol class="rs">
+		<li class="rs-node">
+			<span class="rs-zone">03 Workers</span>
+			<strong>A worker runs one attempt</strong>
+			<code>ctx, cancel := context.WithTimeout(parent, limit)</code>
+		</li>
+		<li class="rs-ask">Did the attempt end before the deadline, with no error?</li>
+		<li class="rs-split">
+			<ol class="rs-branch" data-branch="yes">
+				<li class="rs-tag">Yes</li>
+				<li class="rs-node" data-tone="ok">
+					<span class="rs-zone">04 Results</span>
+					<strong>Done</strong>
+					<code>{'results <- Result{Err: nil}'}</code>
+				</li>
+			</ol>
+			<ol class="rs-branch" data-branch="no">
+				<li class="rs-tag">No</li>
+				<li class="rs-node" data-tone="alert">
+					<span class="rs-zone">03 Workers</span>
+					<strong>Alert: Timeout or Error</strong>
+					<span>The card flashes for 0.7s.</span>
+				</li>
+				<li class="rs-ask">Is this attempt 1 or 2 of 3?</li>
+				<li class="rs-split">
+					<ol class="rs-branch" data-branch="yes">
+						<li class="rs-tag">Yes</li>
+						<li class="rs-node" data-tone="warn">
+							<span class="rs-zone">01 Producer</span>
+							<strong>Retry backoff</strong>
+							<span>Wait 0.8s, then 1.6s, plus up to 0.3s of jitter.</span>
+						</li>
+						<li class="rs-node">
+							<span class="rs-zone">02 Channel</span>
+							<strong>Send again</strong>
+							<span>Same rules as a new job: handoff, buffer, or Blocked.</span>
+						</li>
+						<li class="rs-loop">Back to the top</li>
+					</ol>
+					<ol class="rs-branch" data-branch="no">
+						<li class="rs-tag">No</li>
+						<li class="rs-node" data-tone="alert">
+							<span class="rs-zone">04 Results</span>
+							<strong>Failed</strong>
+							<span>All 3 attempts used. In production: a dead-letter queue.</span>
+						</li>
+					</ol>
+				</li>
+			</ol>
+		</li>
+	</ol>
+</Diagram>

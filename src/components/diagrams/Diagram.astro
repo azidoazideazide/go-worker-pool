@@ -1,0 +1,33 @@
+---
+/**
+ * Diagram — shared frame for the four static teaching diagrams.
+ *
+ * Diagrams are plain HTML and CSS, rendered at build time. They need no
+ * JavaScript and no third-party library, and the text keeps its real size
+ * on a 390px phone (an SVG would scale the labels down).
+ */
+interface Props {
+	id: string;
+	title: string;
+	caption?: string;
+}
+
+const { id, title, caption } = Astro.props;
+---
+
+<figure class="dg" data-diagram={id} aria-labelledby={`dg-${id}-title`}>
+	<div class="dg-head">
+		<strong class="dg-title" id={`dg-${id}-title`}>{title}</strong>
+		<slot name="legend" />
+	</div>
+	<div class="dg-body">
+		<slot />
+	</div>
+	{
+		caption && (
+			<figcaption class="dg-foot">
+				<p class="dg-caption">{caption}</p>
+			</figcaption>
+		)
+	}
+</figure>

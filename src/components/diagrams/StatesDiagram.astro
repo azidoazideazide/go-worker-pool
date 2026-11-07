@@ -1,0 +1,66 @@
+---
+/**
+ * StatesDiagram — Concepts. Every worker state change the picture can show.
+ * The pills use the same colors as the state pills on the worker cards.
+ * Rules match src/lib/pool-engine.ts: after a job or an Alert, a worker takes
+ * Slot [0] in the same step, so it is never Idle next to a waiting job.
+ */
+import Diagram from './Diagram.astro';
+
+type State = 'offline' | 'idle' | 'busy' | 'alert' | 'draining';
+
+const label: Record<State, string> = {
+	offline: 'Offline',
+	idle: 'Idle',
+	busy: 'Busy',
+	alert: 'Alert',
+	draining: 'Draining',
+};
+
+const moves: ReadonlyArray<{ from: State; to: readonly State[]; when: string; code?: string }> = [
+	{ from: 'offline', to: ['idle'], when: 'You raise the Workers slider. A new goroutine starts.', code: 'go worker(id, jobs, results)' },
+	{ from: 'idle', to: ['busy'], when: 'A send arrives. The job goes straight to this worker (handoff).', code: 'job := <-jobs' },
+	{ from: 'busy', to: ['busy'], when: 'The job ends and the buffer holds a job. The worker takes Slot [0] in the same step.' },
+	{ from: 'busy', to: ['idle'], when: 'The job ends and the buffer is empty. The worker parks and uses no CPU.' },
+	{ from: 'busy', to: ['alert'], when: 'Resilience mode: the attempt hits its deadline or a transient error.', code: 'ctx.Err()' },
+	{ from: 'alert', to: ['busy', 'idle'], when: 'After 0.7s the worker reports the failure. Then it takes Slot [0], or parks if the buffer is empty.' },
+	{ from: 'busy', to: ['draining'], when: 'You lower the Workers slider. The worker keeps its job.' },
+	{ from: 'draining', to: ['offline'], when: 'The current job ends. The goroutine returns.' },
+	{ from: 'idle', to: ['offline'], when: 'You lower the Workers slider. An Idle worker exits at once.' },
+];
+---
+
+<Diagram
+	id="states"
+	title="How a worker changes state"
+	caption="The pills match the worker cards in the picture. No row goes from Busy to Idle while a job waits in the buffer."
+>
+	<ol class="st">
+		{
+			moves.map((move) => (
+				<li class="st-row">
+					<span class="st-move">
+						<span class="st-pill" data-s={move.from}>
+							{label[move.from]}
+						</span>
+						<span class="st-arrow" aria-label="to">
+							→
+						</span>
+						{move.to.map((to, i) => (
+							<>
+								{i > 0 && <span class="st-or">or</span>}
+								<span class="st-pill" data-s={to}>
+									{label[to]}
+								</span>
+							</>
+						))}
+					</span>
+					<span class="st-when">
+						{move.when}
+						{move.code && <code>{move.code}</code>}
+					</span>
+				</li>
+			))
+		}
+	</ol>
+</Diagram>

@@ -34,20 +34,12 @@ Read the stage from left to right on desktop, or from top to bottom on a phone. 
 
 | Zone | Everyday meaning | Go code | What happens here |
 | --- | --- | --- | --- |
-| **01 Producer** | The sender at the start of the belt | `jobs <- job` | One goroutine creates jobs and sends them into the channel. |
-| **02 Channel** | A conveyor belt with `N` waiting slots | `jobs := make(chan Job, N)` | Holds waiting jobs in first-in, first-out order. |
+| **01 Producer** | The sender at the start of the line | `jobs <- job` | One goroutine creates jobs and sends them into the channel. |
+| **02 Channel** | A waiting line with `N` slots | `jobs := make(chan Job, N)` | Holds waiting jobs in first-in, first-out order. |
 | **03 Workers** | A fixed team of gopher clerks | `go worker(id, jobs, results)` | Up to 6 goroutines. Each worker runs `for job := range jobs` and takes one job at a time. |
 | **04 Results** | The finished outbox and error tray | `results <- Result{}` | Each worker sends one result (`Done` or `Failed`) after finishing a job. |
 
-```mermaid
-flowchart LR
-    %% diagram: pipeline
-    P["01 Producer\njobs <- job"]
-    Chan["02 Channel Buffer\nSlot [N-1] ... Slot [0]"]
-    Pool["03 Worker Pool\nWorkers 1..M"]
-    Out["04 Results\nDone / Failed"]
-    P --> Chan --> Pool --> Out
-```
+<!-- diagram: pipeline -->
 
 ## Five channel rules the picture follows
 
@@ -63,7 +55,7 @@ Because of Rule 2, **an Idle worker never sits next to a non-empty buffer**. If 
 
 ## Buffer slots and unbuffered mode
 
-Slots are numbered from the **front**. `Buffer [0]` is on the right side of the pipe, closest to the workers. The next worker to finish always takes `Buffer [0]`.
+Slots are numbered from the **front**. `Slot [0]` is on the right side of the channel, closest to the workers. The next worker to finish always takes `Slot [0]`.
 
 The buffer size `cap(jobs)` is fixed when `make(chan Job, N)` runs. Moving the **Buffer** slider in the picture restarts the pool because Go cannot resize an existing channel.
 
@@ -77,22 +69,11 @@ Each worker card shows a Go **gopher** whose pose and pill reflect its current *
 | --- | --- | --- |
 | **Idle** | Half-closed eyes, looking at the channel | Parked on `<-jobs`, waiting for the next job. |
 | **Busy** | Eyes open, holding the job packet, meter filling | Running `process(ctx, job)`. |
-| **Alert** (`Timeout` / `Error`) | Wide eyes, coral flash, `!` mark | The attempt failed in **Resilience mode**. The worker reports the failure and is free for the next job. |
+| **Alert** (`Timeout` / `Error`) | Wide eyes, coral flash, `!` mark | The attempt failed in **Resilience mode**. The worker reports the failure, then takes the next job. |
 | **Draining** | Busy pose with note `Exits after this job` | You lowered the **Workers** slider. The worker finishes its current job before exiting so work is never lost. |
 | **Offline** | Grey and asleep | The worker slot has no running goroutine. |
 
-```mermaid
-stateDiagram-v2
-    %% diagram: states
-    [*] --> Offline
-    Offline --> Idle
-    Idle --> Busy
-    Busy --> Idle
-    Busy --> Alert
-    Alert --> Idle
-    Busy --> Draining
-    Draining --> Offline
-```
+<!-- diagram: states -->
 
 ## Reading a job packet
 
@@ -108,7 +89,7 @@ Every job is drawn as one **job packet** that keeps its identity from the produc
 | Preset | What to observe |
 | --- | --- |
 | **1 Steady flow** | Three workers keep up with incoming work. Watch jobs hand off directly to idle workers. |
-| **2 Backpressure** | Two workers are slower than the producer. All 6 slots fill, `FULL` appears, and the producer blocks. |
+| **2 Backpressure** | Two workers are slower than the producer. All 4 slots fill, `FULL` appears, and the producer becomes **Blocked**. |
 | **3 Timeout & retry** | **Resilience mode** is on. Slow attempts hit the context deadline, flash **Alert**, wait in **Retry backoff**, and try again. |
 | **4 Drain & idle** | Auto-send is off. Workers empty the buffer from `Slot [0]`, then park in **Idle**. |
 

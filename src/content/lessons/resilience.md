@@ -9,15 +9,7 @@ In **Core mode**, every job finishes on its first attempt. Real production syste
 
 Turn on **Resilience** mode in the picture (or choose **Preset 3: Timeout & retry**) to see how a production worker pool protects itself from hung tasks and temporary failures.
 
-```mermaid
-flowchart LR
-    %% diagram: resilience
-    Start["Worker takes Job"] --> Ctx["context.WithTimeout"]
-    Ctx --> Done["Done Tray"]
-    Ctx --> Alert["Alert (Timeout / Error)"]
-    Alert --> Backoff["Retry Backoff + Jitter"]
-    Alert --> Failed["Failed Tray (DLQ)"]
-```
+<!-- diagram: resilience -->
 
 ## 1. Give each attempt a context deadline
 
@@ -72,7 +64,7 @@ func backoff(attempt int) time.Duration {
 }
 ```
 
-In the picture, waiting jobs sit in the **Retry backoff** tray inside Zone 01 with a circular countdown ring. While a job waits in backoff, the worker is already free to run other jobs.
+In the picture, waiting jobs sit in the **Retry backoff** tray inside Zone 01 with a circular countdown ring. While a job waits in backoff, the worker already runs other jobs. When the wait ends, the retry goes back through the channel with the same send rules as a new job: handoff, buffer, or **Blocked**.
 
 ## 4. Stop after a maximum number of attempts (Dead-Letter Queue)
 

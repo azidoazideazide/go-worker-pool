@@ -19,7 +19,7 @@ A goroutine starts with a tiny stack (a few kilobytes) multiplexed onto OS threa
 
 ## 2. Make a channel (`make(chan T, N)`)
 
-A **channel** is a typed, thread-safe pipe that passes values between goroutines in first-in, first-out order.
+A **channel** is a typed, thread-safe line that passes values between goroutines in first-in, first-out order.
 
 ```go
 jobs := make(chan Job, 6)    // buffered channel: 6 waiting slots
@@ -158,6 +158,6 @@ func workerAbort(ctx context.Context, jobs <-chan Job, results chan<- Result) {
 | `go worker(...)` | A gopher card wakes up from **Offline** to **Idle**. |
 | `jobs := make(chan Job, 6)` | Zone 02 allocates 6 buffer slots (`[5]` down to `[0]`). |
 | `jobs <- job` | A job packet leaves the producer (or blocks in the outlet when full). |
-| `job, ok := <-jobs` | An **Idle** gopher takes `Buffer [0]` and turns **Busy**. |
+| `job, ok := <-jobs` | An **Idle** gopher takes `Slot [0]` and turns **Busy**. |
 | `close(jobs)` | Workers drain remaining buffer slots, then exit their loop. |
 | `results <- r` | A chip lands in the **Done** (or **Failed**) tray. |
