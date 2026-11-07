@@ -1,6 +1,8 @@
 # go-worker-pool
 
-Static Astro lesson site and Go worker pool module.
+![Worker pool picture: producer, channel, workers, and results](go-worker-pool.png)
+
+Learn Go worker pools through an interactive lesson site and a companion Go module. Explore goroutines, channels, backpressure, retries, and worker draining with a visual picture of the pool.
 
 Live site: https://azidoazideazide.github.io/go-worker-pool/
 
