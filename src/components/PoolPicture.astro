@@ -405,6 +405,7 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 		type PoolEvent,
 		type PoolState,
 	} from '../lib/pool-engine';
+	import { cssDurationMs } from '../lib/css-time';
 
 	type Variant = 'slot' | 'row' | 'chip';
 	type Status = 'done' | 'failed' | 'backoff' | 'blocked' | null;
@@ -488,7 +489,7 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 		/* -------- Motion tokens (read from tokens.css, single source of truth) -------- */
 		const rootStyle = getComputedStyle(document.documentElement);
 		const token = (name: string, fallback: string) => rootStyle.getPropertyValue(name).trim() || fallback;
-		const ms = (name: string, fallback: number) => parseFloat(token(name, '')) || fallback;
+		const ms = (name: string, fallback: number) => cssDurationMs(token(name, ''), fallback);
 		const EASE_IN_OUT = token('--ease-in-out', 'ease-in-out');
 		const EASE_OUT = token('--ease-out', 'ease-out');
 		const EASE_SPRING = token('--ease-spring', 'ease-out');
