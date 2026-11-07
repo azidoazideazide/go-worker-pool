@@ -7,361 +7,252 @@ interface Props {
 
 const { id, title, caption } = Astro.props;
 
-const meta: Record<
+const diagrams: Record<
 	Props['id'],
 	{
-		kicker: string;
 		defaultTitle: string;
 		defaultCaption: string;
-		mermaidCode: string;
+		code: string;
 	}
 > = {
 	comparison: {
-		kicker: 'Diagram 01 · System Design Comparison',
 		defaultTitle: 'Sequential vs. Unbounded vs. Worker pool',
 		defaultCaption:
-			'A worker pool caps active goroutines and holds spikes in a fixed channel buffer. When the buffer fills, backpressure slows the producer instead of crashing the server.',
-		mermaidCode: `flowchart TB
-    subgraph S1["1. Sequential (One by One) — Slow"]
+			'Sequential execution queues 99 jobs behind 1 worker. Unbounded execution spawns 1,000 goroutines at once and exhausts resources. A worker pool bounds active workers and holds bursts in a fixed channel buffer.',
+		code: `flowchart TB
+    subgraph S1["1. Sequential (One by One)"]
         direction LR
-        J1["100 Jobs arrive"] --> W1["1 Worker\n(1 job at a time)"]
-        W1 --> Out1["99 jobs wait\nHigh total latency"]
+        A1["100 Jobs arrive"] --> A2["1 Worker<br/>1 job at a time"] --> A3["99 jobs wait<br/>Slow batch time"]
     end
 
-    subgraph S2["2. Unbounded (All at Once) — Overload"]
+    subgraph S2["2. Unbounded (All at Once)"]
         direction LR
-        J2["1,000 Jobs arrive"] --> W2["1,000 Workers\n(spawned at once)"]
-        W2 --> Out2["Memory & CPU spike\nDatabase connections fail"]
+        B1["1,000 Jobs arrive"] --> B2["1,000 Goroutines<br/>spawned at once"] --> B3["RAM & DB spike<br/>System overload"]
     end
 
-    subgraph S3["3. Worker Pool (Fixed Workers + Buffer) — Controlled"]
+    subgraph S3["3. Worker Pool (Bounded)"]
         direction LR
-        J3["Producer\njobs <- job"] --> Buf["Channel Buffer\n6 waiting slots"]
-        Buf --> W3["3 Workers\n3 jobs at once"]
-        W3 --> Out3["Steady throughput\nSafe memory limit\nBackpressure when full"]
-    end`,
+        C1["01 Producer<br/>jobs &lt;- job"] --> C2["02 Channel Buffer<br/>6 FIFO slots"] --> C3["03 Workers (3)<br/>Fixed goroutines"] --> C4["04 Results<br/>Steady flow"]
+    end
+
+    S1 ~~~ S2 ~~~ S3`,
 	},
 	pipeline: {
-		kicker: 'Diagram 02 · Pipeline & Channel Rules',
 		defaultTitle: 'How a job moves from producer to result',
 		defaultCaption:
 			'An idle worker receives a send directly (handoff). When all workers are busy, jobs wait in the buffer from tail to front (Slot [0]). When the buffer is full, the producer blocks.',
-		mermaidCode: `flowchart LR
-    %% diagram: pipeline
-    P["01 Producer\njobs <- job"]
+		code: `flowchart TB
+    P["01 Producer<br/>jobs &lt;- job"]
 
-    subgraph Chan["02 Channel (make(chan Job, N))"]
+    subgraph Chan["02 Channel Buffer (make(chan Job, N))"]
         direction LR
-        Tail["Slot [N-1]\nTail"] --> Mid["..."] --> Front["Slot [0]\nFront"]
+        Tail["Slot [N-1] (Tail)"] --> Mid["..."] --> Front["Slot [0] (Front)"]
     end
 
     subgraph Pool["03 Worker Pool (Fixed Goroutines)"]
-        direction TB
-        W1["Worker 1\nfor job := range jobs"]
-        W2["Worker 2\nfor job := range jobs"]
-        W3["Worker 3\nfor job := range jobs"]
+        direction LR
+        W1["Worker 1"]
+        W2["Worker 2"]
+        W3["Worker 3"]
     end
 
-    subgraph Out["04 Results (chan Result)"]
-        direction TB
-        Done["Done Tray\nResult{Err: nil}"]
-        Failed["Failed Tray (DLQ)\nAll 3 attempts used"]
+    subgraph Out["04 Results &amp; Trays"]
+        direction LR
+        Done["Done Tray<br/>Result{Err: nil}"]
+        Backoff["Retry Backoff<br/>Wait + Jitter → Producer"]
+        Failed["Failed Tray (DLQ)<br/>All 3 attempts used"]
     end
 
-    Backoff["Retry Backoff Tray\nWait + Jitter"]
-
-    P -- "1. Handoff (if a worker is Idle)" --> Pool
-    P -- "2. Buffered send (if workers are Busy)" --> Tail
-    P -. "3. Blocked send (if Buffer is FULL)\n= Backpressure" .-> Tail
-    Front -- "Receive (<-jobs)" --> Pool
-    Pool -- "Job finishes" --> Done
-    Pool -- "Timeout or Transient error\n(Attempt 1 or 2)" --> Backoff
-    Backoff -- "Retry send" --> P
+    P -- "2. Buffered send (workers Busy)" --> Tail
+    P -. "3. Blocked send (Buffer FULL = Backpressure)" .-> Tail
+    P -- "1. Handoff (skips buffer if worker Idle)" --> Pool
+    Front -- "Receive (&lt;-jobs)" --> Pool
+    Pool -- "Finishes in time" --> Done
+    Pool -- "Timeout / HTTP 503 (Attempt 1–2)" --> Backoff
     Pool -- "Attempt 3 fails" --> Failed`,
 	},
 	states: {
-		kicker: 'Diagram 03 · Worker Lifecycle',
-		defaultTitle: 'Worker goroutine states',
+		defaultTitle: 'Worker goroutine state transitions',
 		defaultCaption:
-			'Each worker moves between five states. A worker is never Idle while the buffer holds a job.',
-		mermaidCode: `stateDiagram-v2
-    %% diagram: states
+			'Each worker moves between five states. A worker is never Idle while the buffer holds a job: it stays Busy and takes the next job from Slot [0].',
+		code: `stateDiagram-v2
+    direction TB
     [*] --> Offline : Slot not started
     Offline --> Idle : go worker(id, jobs, results)
-    Idle --> Busy : <-jobs (handoff or from Slot [0])
-    Busy --> Idle : Result{Err: nil} sent to Done\n(buffer is empty)
-    Busy --> Busy : Result sent, next job taken\nfrom Slot [0] immediately
-    Busy --> Alert : Context deadline exceeded\nor Transient error
-    Alert --> Idle : Job routed to Retry backoff\nor Failed tray
-    Busy --> Draining : Pool size lowered by visitor
-    Draining --> Offline : Current job finishes\nand goroutine returns
-    Idle --> Offline : close(jobs) and buffer empty`,
+    Idle --> Busy : Receive a job
+    Busy --> Idle : Buffer empty
+    Busy --> Alert : Timeout or HTTP 503
+    Alert --> Idle : Routed to Backoff or Failed
+    Busy --> Draining : Pool size lowered
+    Draining --> Offline : Current job finishes
+    Idle --> Offline : close(jobs) and empty`,
 	},
 	resilience: {
-		kicker: 'Diagram 04 · Resilience & Retry Flow',
 		defaultTitle: 'Attempt deadline, retry backoff, and dead-letter queue',
 		defaultCaption:
 			'Each attempt gets its own context deadline. Transient failures wait in Retry backoff with jitter so retries do not block a worker or flood the downstream service.',
-		mermaidCode: `flowchart LR
-    %% diagram: resilience
-    Start["Worker takes Job\n(Attempt 1, 2, or 3)"] --> Ctx["context.WithTimeout\n(per-attempt deadline)"]
-    Ctx --> Select{"select:\nwork vs. ctx.Done()"}
-
-    Select -- "Finishes in time\n(no error)" --> Done["04 Done Tray\nresults <- Result{Err: nil}"]
-    Select -- "ctx.Done() Timeout\nor Transient error (HTTP 503)" --> Alert["03 Worker Alert\n(coral flash)"]
-
-    Alert --> Check{"Attempt < 3?"}
-    Check -- "Yes (Attempt 1 or 2)" --> Backoff["01 Retry Backoff Tray\nExponential wait + Jitter\n(worker is free immediately)"]
-    Backoff -- "Timer expires:\nsend retry (r1/2 or r2/2)" --> Requeue["02 Channel / Worker"]
-    Check -- "No (Attempt 3 failed)" --> Failed["04 Failed Tray\nDead-letter queue (DLQ)"]`,
+		code: `flowchart TB
+    Start["Worker takes Job (Attempt 1..3)"] --> Ctx["context.WithTimeout(parent, limit)"]
+    Ctx --> Select{"Finishes before ctx.Done()?"}
+    Select -- "Yes (Err == nil)" --> Done["04 Done Tray<br/>results &lt;- Result{Err: nil}"]
+    Select -- "Timeout or HTTP 503" --> Alert["03 Worker Alert<br/>Coral flash"]
+    Alert --> Check{"Attempt &lt; 3?"}
+    Check -- "Yes (Attempt 1 or 2)" --> Backoff["01 Retry Backoff Tray<br/>Exponential wait + Jitter"]
+    Backoff -. "Re-send (r1/2 or r2/2)" .-> Start
+    Check -- "No (Attempt 3 failed)" --> Failed["04 Failed Tray<br/>Dead-letter queue (DLQ)"]`,
 	},
 };
 
-const info = meta[id];
-const heading = title ?? info.defaultTitle;
-const desc = caption ?? info.defaultCaption;
+const item = diagrams[id];
+const heading = title ?? item.defaultTitle;
+const desc = caption ?? item.defaultCaption;
 ---
 
 <figure class="mermaid-figure" data-diagram={id}>
 	<div class="mermaid-head">
-		<div class="mermaid-head-text">
-			<span class="mermaid-kicker">{info.kicker}</span>
-			<h3 class="mermaid-title">{heading}</h3>
-		</div>
-		<span class="mermaid-badge">Mermaid schematic</span>
+		<strong class="mermaid-title">{heading}</strong>
 	</div>
-
-	<div class="mermaid-canvas">
-		{
-			id === 'comparison' && (
-				<div class="mm-comparison" role="img" aria-label="Comparison of Sequential, Unbounded, and Worker pool execution">
-					<div class="mm-lane mm-lane-warn">
-						<div class="mm-lane-head">
-							<span class="mm-lane-tag mm-tag-warn">1. Sequential (One by One)</span>
-							<span class="mm-lane-verdict">Safe memory · Too slow for batches</span>
-						</div>
-						<div class="mm-flow">
-							<div class="mm-node">
-								<span class="mm-node-code">100 Jobs arrive</span>
-								<span class="mm-node-sub">EMAIL · IMG · WEBHOOK</span>
-							</div>
-							<span class="mm-arrow" aria-hidden="true">→</span>
-							<div class="mm-node">
-								<span class="mm-node-code">1 Worker</span>
-								<span class="mm-node-sub">Runs 1 job at a time</span>
-							</div>
-							<span class="mm-arrow" aria-hidden="true">→</span>
-							<div class="mm-node mm-node-warn">
-								<span class="mm-node-code">99 Jobs wait in line</span>
-								<span class="mm-node-sub">100 × 2s = 200s total wait</span>
-							</div>
-						</div>
-					</div>
-
-					<div class="mm-lane mm-lane-alert">
-						<div class="mm-lane-head">
-							<span class="mm-lane-tag mm-tag-alert">2. Unbounded (All at Once)</span>
-							<span class="mm-lane-verdict">No limit · Crashes under spikes</span>
-						</div>
-						<div class="mm-flow">
-							<div class="mm-node">
-								<span class="mm-node-code">1,000 Jobs arrive</span>
-								<span class="mm-node-sub">Traffic spike</span>
-							</div>
-							<span class="mm-arrow" aria-hidden="true">→</span>
-							<div class="mm-node mm-node-alert">
-								<span class="mm-node-code">1,000 Goroutines</span>
-								<span class="mm-node-sub">go process(job) × 1,000</span>
-							</div>
-							<span class="mm-arrow" aria-hidden="true">→</span>
-							<div class="mm-node mm-node-alert">
-								<span class="mm-node-code">Resource Exhaustion</span>
-								<span class="mm-node-sub">RAM spike · DB connections fail</span>
-							</div>
-						</div>
-					</div>
-
-					<div class="mm-lane mm-lane-ok">
-						<div class="mm-lane-head">
-							<span class="mm-lane-tag mm-tag-ok">3. Worker Pool (Bounded)</span>
-							<span class="mm-lane-verdict">Fast throughput · Predictable resources</span>
-						</div>
-						<div class="mm-flow">
-							<div class="mm-node">
-								<span class="mm-node-code">01 Producer</span>
-								<span class="mm-node-sub">jobs &lt;- job</span>
-							</div>
-							<span class="mm-arrow" aria-hidden="true">→</span>
-							<div class="mm-node mm-node-channel">
-								<span class="mm-node-code">02 Channel Buffer</span>
-								<span class="mm-node-sub">6 waiting slots (FIFO)</span>
-							</div>
-							<span class="mm-arrow" aria-hidden="true">→</span>
-							<div class="mm-node mm-node-busy">
-								<span class="mm-node-code">03 Fixed Workers (3)</span>
-								<span class="mm-node-sub">3 jobs run in parallel</span>
-							</div>
-							<span class="mm-arrow" aria-hidden="true">→</span>
-							<div class="mm-node mm-node-ok">
-								<span class="mm-node-code">04 Results</span>
-								<span class="mm-node-sub">Done + Backpressure safety</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			)
-		}
-
-		{
-			id === 'pipeline' && (
-				<div class="mm-pipeline" role="img" aria-label="Flowchart of Producer, Channel Buffer, Worker Pool, Results, and Retry backoff">
-					<div class="mm-pipe-grid">
-						<div class="mm-box">
-							<span class="mm-box-kicker">01 Producer</span>
-							<code class="mm-box-code">jobs &lt;- job</code>
-							<ul class="mm-box-list">
-								<li><strong>Path A (Handoff):</strong> If a worker is <code>Idle</code>, the job skips the buffer and goes straight to the worker.</li>
-								<li><strong>Path B (Buffer):</strong> If all workers are <code>Busy</code>, the job enters the tail slot.</li>
-								<li><strong>Path C (Blocked):</strong> If all slots are full, the producer waits (<strong>Backpressure</strong>).</li>
-							</ul>
-						</div>
-
-						<div class="mm-box mm-box-channel">
-							<span class="mm-box-kicker">02 Channel Buffer</span>
-							<code class="mm-box-code">make(chan Job, N)</code>
-							<div class="mm-slot-strip" aria-hidden="true">
-								<span class="mm-mini-slot">Tail [N-1]</span>
-								<span class="mm-mini-arrow">→</span>
-								<span class="mm-mini-slot">[1]</span>
-								<span class="mm-mini-arrow">→</span>
-								<span class="mm-mini-slot mm-mini-front">Front [0]</span>
-							</div>
-							<p class="mm-box-note">First-in, first-out. The next free worker always takes <code>Slot [0]</code>.</p>
-						</div>
-
-						<div class="mm-box mm-box-busy">
-							<span class="mm-box-kicker">03 Worker Pool</span>
-							<code class="mm-box-code">for job := range jobs</code>
-							<div class="mm-worker-stack">
-								<span class="mm-worker-pill">Worker 1 · Goroutine</span>
-								<span class="mm-worker-pill">Worker 2 · Goroutine</span>
-								<span class="mm-worker-pill">Worker 3 · Goroutine</span>
-							</div>
-							<p class="mm-box-note">Fixed count. Each worker runs one job at a time and sends one <code>Result</code>.</p>
-						</div>
-
-						<div class="mm-box">
-							<span class="mm-box-kicker">04 Results &amp; Retries</span>
-							<code class="mm-box-code">{'results <- Result{}'}</code>
-							<div class="mm-result-stack">
-								<span class="mm-res-chip mm-res-ok">Done: finished in time</span>
-								<span class="mm-res-chip mm-res-warn">Retry backoff: Attempt 1–2 failed → wait + jitter → Producer</span>
-								<span class="mm-res-chip mm-res-alert">Failed (DLQ): Attempt 3 failed</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			)
-		}
-
-		{
-			id === 'states' && (
-				<div class="mm-states" role="img" aria-label="State diagram of a worker goroutine: Offline, Idle, Busy, Alert, and Draining">
-					<div class="mm-state-grid">
-						<div class="mm-state-card">
-							<div class="mm-state-top">
-								<span class="mm-state-pill mm-pill-off">Offline</span>
-								<code class="mm-state-trigger">Slot not started / exited</code>
-							</div>
-							<p>No goroutine is running for this slot. Raising the <strong>Workers</strong> slider starts <code>go worker(...)</code> and moves the worker to <strong>Idle</strong>.</p>
-						</div>
-
-						<div class="mm-state-card">
-							<div class="mm-state-top">
-								<span class="mm-state-pill mm-pill-idle">Idle</span>
-								<code class="mm-state-trigger">Parked on &lt;-jobs</code>
-							</div>
-							<p>Waiting for work using zero CPU. As soon as a job arrives, the worker moves to <strong>Busy</strong>. Never Idle while the buffer holds a job.</p>
-						</div>
-
-						<div class="mm-state-card mm-state-card-busy">
-							<div class="mm-state-top">
-								<span class="mm-state-pill mm-pill-busy">Busy</span>
-								<code class="mm-state-trigger">Running process(ctx, job)</code>
-							</div>
-							<p>Executes one job. When done, it sends <code>Result</code> and either takes <code>Slot [0]</code> immediately (stays <strong>Busy</strong>) or parks on <code>&lt;-jobs</code> (<strong>Idle</strong>).</p>
-						</div>
-
-						<div class="mm-state-card mm-state-card-alert">
-							<div class="mm-state-top">
-								<span class="mm-state-pill mm-pill-alert">Alert (Timeout / Error)</span>
-								<code class="mm-state-trigger">ctx.Done() or HTTP 503</code>
-							</div>
-							<p>Brief state when an attempt fails in Resilience mode. The job routes to <strong>Retry backoff</strong> (or <strong>Failed</strong>), freeing the worker immediately.</p>
-						</div>
-
-						<div class="mm-state-card mm-state-card-warn">
-							<div class="mm-state-top">
-								<span class="mm-state-pill mm-pill-warn">Draining</span>
-								<code class="mm-state-trigger">Pool size lowered</code>
-							</div>
-							<p>When you reduce the worker count while a worker is busy, it finishes its current job first so work is never dropped, then moves to <strong>Offline</strong>.</p>
-						</div>
-					</div>
-				</div>
-			)
-		}
-
-		{
-			id === 'resilience' && (
-				<div class="mm-resilience" role="img" aria-label="Resilience flow showing context deadline, timeout or transient error, retry backoff with jitter, and Failed tray">
-					<div class="mm-res-steps">
-						<div class="mm-res-step">
-							<span class="mm-step-num">1</span>
-							<div class="mm-step-body">
-								<strong>Start Attempt with Deadline</strong>
-								<code>ctx, cancel := context.WithTimeout(parent, limit)</code>
-								<p>Every attempt (1, 2, or 3) gets a fresh timer so a hung network call cannot block a worker forever.</p>
-							</div>
-						</div>
-
-						<div class="mm-res-step">
-							<span class="mm-step-num">2</span>
-							<div class="mm-step-body">
-								<strong>Race Work Against <code>ctx.Done()</code></strong>
-								<code>{'select { case <-workDone: ... case <-ctx.Done(): ... }'}</code>
-								<p>If the job finishes before the deadline without error, the worker sends <code>{'Result{Err: nil}'}</code> to the <strong>Done</strong> tray.</p>
-							</div>
-						</div>
-
-						<div class="mm-res-step mm-res-step-warn">
-							<span class="mm-step-num">3</span>
-							<div class="mm-step-body">
-								<strong>Retry Transient Failures with Backoff + Jitter (Attempts 1 &amp; 2)</strong>
-								<code>base := 800ms &lt;&lt; (attempt - 2) + jitter</code>
-								<p>On a <strong>Timeout</strong> or <strong>Transient error</strong>, the job waits outside the worker in the <strong>Retry backoff</strong> tray, then re-enters the pool as <code>r1/2</code> or <code>r2/2</code>.</p>
-							</div>
-						</div>
-
-						<div class="mm-res-step mm-res-step-alert">
-							<span class="mm-step-num">4</span>
-							<div class="mm-step-body">
-								<strong>Stop After 3 Attempts → Failed (Dead-Letter Queue)</strong>
-								<code>attempt == maxAttempts (3)</code>
-								<p>If attempt 3 also fails, the pool stops retrying and moves the job to the <strong>Failed</strong> tray so poison jobs cannot loop forever.</p>
-							</div>
-						</div>
-					</div>
-				</div>
-			)
-		}
+	<div class="mermaid-canvas" data-mermaid-host>
+		<pre class="mermaid-raw" data-mermaid-source={item.code}>{item.code}</pre>
 	</div>
-
 	<figcaption class="mermaid-foot">
 		<p class="mermaid-caption">{desc}</p>
-		<details class="diagram-source">
-			<summary>View Mermaid syntax</summary>
-			<pre><code>{info.mermaidCode}</code></pre>
-		</details>
 	</figcaption>
 </figure>
+
+<script>
+	import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+	const upgradeMarkdownBlocks = () => {
+		const prose = document.querySelector('[data-lesson-prose]');
+		if (prose) {
+			const blocks = prose.querySelectorAll<HTMLPreElement>('pre[data-language="mermaid"]');
+			blocks.forEach((pre) => {
+				const raw = (pre.textContent ?? '').replace(/^\s*%%\s*diagram:.*$/gm, '').trim();
+				const match = (pre.textContent ?? '').match(/%%\s*diagram:\s*(pipeline|states|resilience)/);
+				const id = match?.[1];
+				if (id) {
+					const holder = document.querySelector<HTMLElement>(`[data-mermaid-tpl="${id}"]`);
+					const fig = holder?.querySelector('.mermaid-figure');
+					if (fig) {
+						pre.replaceWith(fig);
+						return;
+					}
+				}
+				const fig = document.createElement('figure');
+				fig.className = 'mermaid-figure';
+				const canvas = document.createElement('div');
+				canvas.className = 'mermaid-canvas';
+				canvas.setAttribute('data-mermaid-host', '');
+				const sourceEl = document.createElement('pre');
+				sourceEl.className = 'mermaid-raw';
+				sourceEl.setAttribute('data-mermaid-source', raw);
+				sourceEl.textContent = raw;
+				canvas.appendChild(sourceEl);
+				fig.appendChild(canvas);
+				pre.replaceWith(fig);
+			});
+		}
+		document.querySelector('[data-mermaid-stash]')?.remove();
+	};
+
+	const getThemeConfig = () => {
+		const style = getComputedStyle(document.documentElement);
+		const token = (name: string) => style.getPropertyValue(name).trim();
+		const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
+		const bgPanel = token('--bg-panel');
+		const bgStage = token('--bg-stage');
+		const bgInset = token('--bg-inset');
+		const bgChannel = token('--bg-channel');
+		const ink = token('--ink');
+		const inkMuted = token('--ink-muted');
+		const line = token('--line');
+		const lineStrong = token('--line-strong');
+		const goBlue = token('--go-blue');
+		const fontSans = token('--font-sans');
+
+		return {
+			startOnLoad: false,
+			securityLevel: 'loose',
+			theme: 'base',
+			fontFamily: fontSans,
+			flowchart: {
+				htmlLabels: true,
+				curve: 'basis',
+				padding: 14,
+				nodeSpacing: 28,
+				rankSpacing: 38,
+				useMaxWidth: true,
+			},
+			state: {
+				useMaxWidth: true,
+			},
+			themeVariables: {
+				darkMode: isDark,
+				background: bgStage,
+				primaryColor: bgPanel,
+				primaryTextColor: ink,
+				primaryBorderColor: goBlue,
+				secondaryColor: bgChannel,
+				secondaryTextColor: ink,
+				secondaryBorderColor: lineStrong,
+				tertiaryColor: bgInset,
+				tertiaryTextColor: ink,
+				tertiaryBorderColor: line,
+				lineColor: lineStrong,
+				textColor: ink,
+				mainBkg: bgPanel,
+				nodeBorder: goBlue,
+				clusterBkg: bgInset,
+				clusterBorder: line,
+				titleColor: ink,
+				edgeLabelBackground: bgPanel,
+				stateBkg: bgPanel,
+				stateLabelColor: ink,
+				labelColor: ink,
+				altBackground: bgInset,
+				fontSize: '13px',
+			},
+		};
+	};
+
+	let renderCount = 0;
+
+	const renderAllDiagrams = async () => {
+		mermaid.initialize(getThemeConfig());
+		const hosts = document.querySelectorAll<HTMLElement>('[data-mermaid-host]');
+		for (const host of hosts) {
+			const rawEl = host.querySelector<HTMLElement>('[data-mermaid-source]');
+			const source = host.getAttribute('data-saved-source') ?? rawEl?.getAttribute('data-mermaid-source') ?? '';
+			if (!source) continue;
+			host.setAttribute('data-saved-source', source);
+			try {
+				renderCount += 1;
+				const svgId = `mermaid-svg-${renderCount}`;
+				const { svg } = await mermaid.render(svgId, source);
+				host.innerHTML = svg;
+				const svgEl = host.querySelector('svg');
+				if (svgEl) {
+					svgEl.classList.add('mermaid-svg');
+					svgEl.removeAttribute('height');
+				}
+			} catch (err) {
+				console.error('Mermaid render error:', err);
+			}
+		}
+	};
+
+	upgradeMarkdownBlocks();
+	renderAllDiagrams();
+
+	const observer = new MutationObserver((mutations) => {
+		for (const m of mutations) {
+			if (m.type === 'attributes' && m.attributeName === 'data-theme') {
+				renderAllDiagrams();
+				break;
+			}
+		}
+	});
+	observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+</script>

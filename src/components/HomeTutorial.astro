@@ -1,318 +1,286 @@
 ---
 /**
- * HomeTutorial — modular system-design tutorial and guide placed below
- * PoolPicture on the Overview (Home) page.
+ * HomeTutorial — architectural overview and guide below PoolPicture on the Home page.
  *
- * Kept separate from PoolPicture.astro so the layout can be rearranged
- * (grid, stacked, or split) without touching the simulation or DOM flight code.
+ * Uses hairline ledger rows and a real rendered Mermaid diagram rather than nested
+ * rounded cards. Data arrays stay at the top so layout changes remain easy.
  */
 import MermaidDiagram from './MermaidDiagram.astro';
 import { sitePath } from '../lib/site-path';
 import type { PresetKey } from '../lib/pool-presets';
 
-const comparisonCards = [
+const approaches = [
 	{
-		badge: 'Option 1',
-		tone: 'warn',
-		title: 'Sequential (One by One)',
+		name: 'Sequential (one by one)',
 		code: 'for _, job := range jobs { process(job) }',
-		summary:
-			'One worker runs one job at a time. Memory stays flat, but when 100 emails or image uploads arrive at once, 99 wait in a single slow line.',
-		metric: 'Low memory · Very slow batch time',
+		burst: '1 worker runs 1 job at a time; 999 jobs wait in a single line.',
+		resources: 'Flat memory, poor throughput',
 	},
 	{
-		badge: 'Option 2',
-		tone: 'alert',
-		title: 'Unbounded (All at Once)',
+		name: 'Unbounded (all at once)',
 		code: 'for _, job := range jobs { go process(job) }',
-		summary:
-			'Spawns a new goroutine for every incoming job with no cap. A sudden spike of 1,000 jobs starts 1,000 concurrent tasks, exhausting RAM, CPU, or database connections.',
-		metric: 'No safety cap · Crashes under spikes',
+		burst: '1,000 goroutines start at once and compete for CPU and sockets.',
+		resources: 'Memory spike, database connection exhaustion',
 	},
 	{
-		badge: 'Option 3 · This Site',
-		tone: 'ok',
-		title: 'Worker Pool (Bounded)',
+		name: 'Worker pool (bounded)',
 		code: 'jobs := make(chan Job, 6) // + 3 workers',
-		summary:
-			'A fixed team of workers pulls from one buffered channel. Three jobs run in parallel, up to six wait on the conveyor belt, and when full, backpressure safely slows the producer.',
-		metric: 'Fast throughput · Predictable resources',
+		burst: '3 workers run in parallel, 6 slots buffer bursts, sender waits when full.',
+		resources: 'Fast throughput, fixed memory ceiling',
 	},
 ] as const;
 
-const workloadCards = [
-	{
-		tag: 'EMAIL',
-		tone: 'email',
-		category: 'I/O-Bound Network Work',
-		work: '1s–2s · SMTP 421',
-		desc: 'Waiting on an external mail server. Workers spend most of their time waiting on network replies, so a pool processes several emails concurrently without flooding the SMTP server.',
-	},
-	{
-		tag: 'WEBHOOK',
-		tone: 'webhook',
-		category: 'I/O-Bound HTTP Calls',
-		work: '1s–3s · HTTP 503',
-		desc: 'Sending event notifications to customer servers that may be slow or return HTTP 503. Needs a per-attempt context deadline and retry backoff.',
-	},
-	{
-		tag: 'IMG',
-		tone: 'image',
-		category: 'CPU-Bound Processing',
-		work: '3s–5s · decoder busy',
-		desc: 'Resizing or encoding images uses heavy CPU and memory. Capping the worker count stops 50 large uploads from freezing the machine.',
-	},
-	{
-		tag: 'SYNC',
-		tone: 'sync',
-		category: 'Connection-Limited Work',
-		work: '2s–4s · DB conn reset',
-		desc: 'Writing batches to a database that only permits a small pool of active connections at the same time.',
-	},
-] as const;
-
-const zoneCards = [
+const zones = [
 	{
 		num: '01',
 		title: 'Producer',
 		code: 'jobs <- job',
-		analogy: 'The sender at the start of the belt',
-		desc: 'Creates job packets and sends them into the channel. If all workers are busy and all buffer slots are full, the producer waits right at the outlet (Blocked).',
+		desc: 'Creates job packets and sends them into the channel. When all workers are busy and all buffer slots are full, the producer waits at the outlet (Blocked).',
 	},
 	{
 		num: '02',
 		title: 'Channel & Buffer',
 		code: 'jobs := make(chan Job, N)',
-		analogy: 'A short conveyor belt with N waiting slots',
-		desc: 'Holds waiting jobs in first-in, first-out order. Slot [0] on the right is the front: the next free worker always takes Slot [0]. If a worker is already idle, a new job skips the belt (Handoff).',
+		desc: 'A first-in, first-out conveyor belt with N waiting slots. Slot [0] is the front. If a worker is already Idle, a send skips the buffer completely (Handoff).',
 	},
 	{
 		num: '03',
-		title: 'Workers (Gophers)',
+		title: 'Workers',
 		code: 'for job := range jobs',
-		analogy: 'A fixed team of clerks (1 to 6)',
-		desc: 'Each gopher is one goroutine taking one job at a time. Its pose shows its state: Idle (waiting on <-jobs), Busy (running a job), Alert (timeout or error), Draining, or Offline.',
+		desc: 'A fixed team of 1 to 6 goroutines. Each gopher takes one job at a time and shows its state: Idle, Busy, Alert, Draining, or Offline.',
 	},
 	{
 		num: '04',
-		title: 'Results & Trays',
+		title: 'Results',
 		code: 'results <- Result{}',
-		analogy: 'Finished outbox and dead-letter tray',
-		desc: 'Every finished job sends one Result to Done. In Resilience mode, failed attempts wait in Retry backoff (in Zone 01) and move to Failed after 3 attempts.',
+		desc: 'Every completed job sends one Result to the Done tray. In Resilience mode, failed attempts wait in Retry backoff and move to Failed after 3 attempts.',
 	},
 ] as const;
 
-const scenarioCards: ReadonlyArray<{
+const workloads = [
+	{
+		tag: 'EMAIL',
+		tone: 'email',
+		kind: 'I/O-bound network work (1s–2s)',
+		desc: 'Workers wait on an external SMTP server. Running a few in parallel increases throughput without hitting rate limits.',
+	},
+	{
+		tag: 'WEBHOOK',
+		tone: 'webhook',
+		kind: 'I/O-bound HTTP calls (1s–3s)',
+		desc: 'Customer endpoints can hang or return HTTP 503. Needs a per-attempt context deadline and retry backoff.',
+	},
+	{
+		tag: 'IMG',
+		tone: 'image',
+		kind: 'CPU-bound image work (3s–5s)',
+		desc: 'Resizing images uses heavy CPU and RAM. Bounding the worker count prevents large uploads from starving the server.',
+	},
+	{
+		tag: 'SYNC',
+		tone: 'sync',
+		kind: 'Connection-limited DB work (2s–4s)',
+		desc: 'Databases allow only a small pool of active connections. A fixed worker count respects that limit.',
+	},
+] as const;
+
+const presets: ReadonlyArray<{
 	key: PresetKey;
 	num: number;
 	title: string;
-	mode: string;
-	whatToWatch: string;
+	desc: string;
 }> = [
 	{
 		key: 'steady',
 		num: 1,
 		title: 'Steady flow',
-		mode: 'Core · 3 workers · cap 6',
-		whatToWatch:
-			'Workers finish jobs faster than they arrive. Watch how a send to an Idle gopher skips the buffer slots completely (Handoff).',
+		desc: 'Three workers keep up with the producer. Watch jobs hand off directly to idle workers without waiting in the buffer.',
 	},
 	{
 		key: 'backpressure',
 		num: 2,
 		title: 'Backpressure',
-		mode: 'Core · 2 workers · cap 6',
-		whatToWatch:
-			'Two workers cannot keep up. All 6 buffer slots fill up, the FULL badge lights up, and the producer blocks on send until Slot [0] opens.',
+		desc: 'Two workers are slower than the producer. All 6 slots fill, the FULL badge appears, and the producer blocks on send.',
 	},
 	{
 		key: 'timeouts',
 		num: 3,
 		title: 'Timeout & retry',
-		mode: 'Resilience · 3 workers · ctx 4s',
-		whatToWatch:
-			'Slow jobs exceed the 4s context deadline. The gopher flashes Alert, the job waits in Retry backoff with jitter, and after 3 attempts lands in Failed.',
+		desc: 'Resilience mode. Slow attempts hit the 4s context deadline, flash Alert, wait in Retry backoff with jitter, and retry.',
 	},
 	{
 		key: 'drain',
 		num: 4,
 		title: 'Drain & idle',
-		mode: 'Core · Auto-send off',
-		whatToWatch:
-			'The producer stops sending new jobs. Workers drain the remaining packets from Slot [0] one by one, then park on <-jobs in Idle state.',
+		desc: 'Auto-send is off. Workers empty the remaining buffer from Slot [0] one by one, then park on <-jobs in Idle state.',
 	},
 ];
 
-const stageCards = [
+const lessons = [
 	{
-		stage: 'Stage 1 · For Everyone',
-		subtitle: 'System Design & Visual Rules (No Go experience required)',
-		lessons: [
-			{
-				order: 'Lesson 1',
-				title: 'Concepts',
-				href: sitePath('lessons/design/'),
-				desc: 'How the 4 zones, handoff, buffer slots, backpressure, and worker states work, with visual Mermaid diagrams.',
-			},
-			{
-				order: 'Lesson 2',
-				title: 'Resilience',
-				href: sitePath('lessons/resilience/'),
-				desc: 'How production systems handle timeouts, transient errors, retry backoff with jitter, dead-letter queues, and 6 common pitfalls.',
-			},
-		],
+		num: 'Lesson 1',
+		stage: 'System Design',
+		title: 'Concepts',
+		href: sitePath('lessons/design/'),
+		desc: 'How the 4 zones, channel buffer rules, handoff, backpressure, and worker states work.',
 	},
 	{
-		stage: 'Stage 2 · For Software Engineers',
-		subtitle: 'Go Concurrency Syntax & Hands-On Implementation',
-		lessons: [
-			{
-				order: 'Lesson 3',
-				title: 'Go Syntax',
-				href: sitePath('lessons/syntax/'),
-				desc: 'Focused Go tutorial: goroutines, buffered channels, directional types, range/close, sync.WaitGroup, and select.',
-			},
-			{
-				order: 'Lesson 4',
-				title: 'Build It',
-				href: sitePath('lessons/setup/'),
-				desc: 'Step-by-step 5-part blueprint to write, shut down cleanly, and race-test your own worker pool in processor/.',
-			},
-		],
+		num: 'Lesson 2',
+		stage: 'System Design',
+		title: 'Resilience',
+		href: sitePath('lessons/resilience/'),
+		desc: 'Context deadlines, transient errors, retry backoff with jitter, dead-letter queues, and 6 common pitfalls.',
+	},
+	{
+		num: 'Lesson 3',
+		stage: 'Go Concurrency',
+		title: 'Go Syntax',
+		href: sitePath('lessons/syntax/'),
+		desc: 'Goroutines, buffered channels, directional types, range and close, sync.WaitGroup, and select.',
+	},
+	{
+		num: 'Lesson 4',
+		stage: 'Go Implementation',
+		title: 'Build It',
+		href: sitePath('lessons/setup/'),
+		desc: 'A 5-step blueprint to write, shut down cleanly, and race-test the companion Go module in processor/.',
 	},
 ] as const;
 ---
 
 <div class="home-tutorial" data-home-tutorial>
-	<section class="tut-section" data-tutorial-section="why" aria-labelledby="tut-why-title">
-		<header class="tut-head">
-			<p class="tut-kicker">01 · System Design Overview</p>
-			<h2 class="tut-title" id="tut-why-title">What is a worker pool, and why does it matter?</h2>
-			<p class="tut-lead">
-				Modern applications constantly run background jobs — sending confirmation emails, delivering webhooks,
-				resizing uploaded photos, or syncing database rows. This interactive site shows how a <strong>worker pool</strong>
-				processes those jobs fast without overloading your server.
+	<section class="guide-block" data-tutorial-section="why" aria-labelledby="guide-why-title">
+		<div class="guide-intro">
+			<h2 class="guide-heading" id="guide-why-title">Why use a worker pool?</h2>
+			<p class="guide-lead">
+				Applications constantly run background jobs such as sending emails, delivering webhooks, resizing images,
+				and syncing database records. A <strong>worker pool</strong> runs a fixed number of workers pulling from one
+				buffered channel so bursts wait in line instead of crashing the server.
 			</p>
-		</header>
+		</div>
 
-		<div class="tut-card-grid tut-card-grid-3">
-			{
-				comparisonCards.map((card) => (
-					<article class="tut-card" data-tone={card.tone}>
-						<div class="tut-card-top">
-							<span class={`tut-pill tut-pill-${card.tone}`}>{card.badge}</span>
-							<span class="tut-metric">{card.metric}</span>
-						</div>
-						<h3 class="tut-card-title">{card.title}</h3>
-						<code class="tut-card-code">{card.code}</code>
-						<p class="tut-card-body">{card.summary}</p>
-					</article>
-				))
-			}
+		<div class="guide-table-wrap">
+			<table class="guide-table">
+				<thead>
+					<tr>
+						<th scope="col">Approach</th>
+						<th scope="col">Go pattern</th>
+						<th scope="col">When 1,000 jobs arrive at once</th>
+						<th scope="col">Resource profile</th>
+					</tr>
+				</thead>
+				<tbody>
+					{
+						approaches.map((row) => (
+							<tr>
+								<th scope="row">{row.name}</th>
+								<td>
+									<code>{row.code}</code>
+								</td>
+								<td>{row.burst}</td>
+								<td>{row.resources}</td>
+							</tr>
+						))
+					}
+				</tbody>
+			</table>
 		</div>
 
 		<MermaidDiagram id="comparison" />
+	</section>
 
-		<div class="tut-subblock">
-			<h3 class="tut-subtitle">When do you need a worker pool? (The 4 job types in the picture)</h3>
-			<p class="tut-sublead">
-				Every packet moving across the stage above represents one of four real-world background workloads:
+	<section class="guide-block guide-two-col" data-tutorial-section="zones" aria-labelledby="guide-zones-title">
+		<div class="guide-col">
+			<h2 class="guide-heading" id="guide-zones-title">The four zones in the picture</h2>
+			<p class="guide-sub">
+				Read the stage above from left to right. Each numbered zone maps to one part of the Go program.
 			</p>
-			<div class="tut-card-grid tut-card-grid-4">
+			<dl class="guide-ledger">
 				{
-					workloadCards.map((item) => (
-						<article class="tut-job-card">
-							<div class="tut-job-head">
-								<span class={`tut-job-tag tut-job-${item.tone}`}>{item.tag}</span>
-								<span class="tut-job-work">{item.work}</span>
-							</div>
-							<strong class="tut-job-cat">{item.category}</strong>
-							<p class="tut-job-desc">{item.desc}</p>
-						</article>
+					zones.map((z) => (
+						<div class="guide-ledger-row">
+							<dt class="guide-ledger-term">
+								<span class="guide-num">{z.num}</span>
+								<strong>{z.title}</strong>
+								<code>{z.code}</code>
+							</dt>
+							<dd class="guide-ledger-desc">{z.desc}</dd>
+						</div>
 					))
 				}
-			</div>
+			</dl>
+		</div>
+
+		<div class="guide-col">
+			<h2 class="guide-heading">The four job types</h2>
+			<p class="guide-sub">
+				Each moving packet represents one of four real background workloads with its own work time and failure mode.
+			</p>
+			<dl class="guide-ledger">
+				{
+					workloads.map((w) => (
+						<div class="guide-ledger-row">
+							<dt class="guide-ledger-term">
+								<span class={`guide-job-tag guide-job-${w.tone}`}>{w.tag}</span>
+								<strong>{w.kind}</strong>
+							</dt>
+							<dd class="guide-ledger-desc">{w.desc}</dd>
+						</div>
+					))
+				}
+			</dl>
 		</div>
 	</section>
 
-	<section class="tut-section" data-tutorial-section="zones" aria-labelledby="tut-zones-title">
-		<header class="tut-head">
-			<p class="tut-kicker">02 · Reading the Telemetry Board</p>
-			<h2 class="tut-title" id="tut-zones-title">How the 4 zones work together</h2>
-			<p class="tut-lead">
-				Think of the stage above as a short <strong>conveyor belt with 6 slots</strong> and a fixed team of
-				<strong>3 gopher workers</strong> at the end. Every visual element maps directly to one line of Go code.
+	<section class="guide-block" data-tutorial-section="try" aria-labelledby="guide-try-title">
+		<div class="guide-intro">
+			<h2 class="guide-heading" id="guide-try-title">Four presets to test in the picture</h2>
+			<p class="guide-sub">
+				Select any preset below to load that starting state into the stage at the top of the page.
 			</p>
-		</header>
-
-		<div class="tut-card-grid tut-card-grid-4">
-			{
-				zoneCards.map((z) => (
-					<article class="tut-zone-card">
-						<div class="tut-zone-head">
-							<span class="tut-zone-num">{z.num}</span>
-							<h3 class="tut-card-title">{z.title}</h3>
-						</div>
-						<code class="tut-card-code">{z.code}</code>
-						<p class="tut-zone-analogy">{z.analogy}</p>
-						<p class="tut-card-body">{z.desc}</p>
-					</article>
-				))
-			}
 		</div>
-	</section>
 
-	<section class="tut-section" data-tutorial-section="try" aria-labelledby="tut-try-title">
-		<header class="tut-head">
-			<p class="tut-kicker">03 · Interactive Scenarios &amp; Curriculum</p>
-			<h2 class="tut-title" id="tut-try-title">Try 4 real scenarios in the picture above</h2>
-			<p class="tut-lead">
-				Click any scenario below to load that preset into the telemetry board at the top of the page and watch how
-				the channel buffer and workers respond.
-			</p>
-		</header>
-
-		<div class="tut-card-grid tut-card-grid-4">
+		<div class="guide-strip">
 			{
-				scenarioCards.map((sc) => (
-					<article class="tut-scenario-card">
-						<div class="tut-scenario-top">
-							<span class="tut-zone-num">{sc.num}</span>
-							<div>
-								<h3 class="tut-card-title">{sc.title}</h3>
-								<span class="tut-scenario-meta">{sc.mode}</span>
-							</div>
+				presets.map((p) => (
+					<div class="guide-strip-cell">
+						<div class="guide-cell-head">
+							<span class="guide-num">{p.num}</span>
+							<strong class="guide-cell-title">{p.title}</strong>
 						</div>
-						<p class="tut-card-body">{sc.whatToWatch}</p>
-						<button type="button" class="btn tut-try-btn" data-try-preset={sc.key}>
-							Load preset {sc.num} in picture ↑
+						<p class="guide-cell-desc">{p.desc}</p>
+						<button type="button" class="btn guide-load-btn" data-try-preset={p.key}>
+							Load preset {p.num}
 						</button>
-					</article>
-				))
-			}
-		</div>
-
-		<div class="tut-stages">
-			{
-				stageCards.map((group) => (
-					<div class="tut-stage-box">
-						<div class="tut-stage-head">
-							<span class="tut-kicker">{group.stage}</span>
-							<h3 class="tut-subtitle">{group.subtitle}</h3>
-						</div>
-						<div class="tut-lesson-list">
-							{group.lessons.map((lesson) => (
-								<a class="tut-lesson-link" href={lesson.href}>
-									<span class="tut-lesson-order">{lesson.order}</span>
-									<strong class="tut-lesson-title">{lesson.title} →</strong>
-									<span class="tut-lesson-desc">{lesson.desc}</span>
-								</a>
-							))}
-						</div>
 					</div>
 				))
 			}
 		</div>
+	</section>
+
+	<section class="guide-block" data-tutorial-section="lessons" aria-labelledby="guide-lessons-title">
+		<div class="guide-intro">
+			<h2 class="guide-heading" id="guide-lessons-title">Lessons: from system design to Go code</h2>
+			<p class="guide-sub">
+				Lessons 1 and 2 explain the architecture and failure handling for everyone. Lessons 3 and 4 cover Go
+				concurrency syntax and building the companion module in <code>processor/</code>.
+			</p>
+		</div>
+
+		<nav class="guide-strip" aria-label="Course lessons">
+			{
+				lessons.map((l) => (
+					<a class="guide-strip-cell guide-lesson-cell" href={l.href}>
+						<div class="guide-lesson-meta">
+							<span>{l.num}</span>
+							<span>{l.stage}</span>
+						</div>
+						<strong class="guide-cell-title">{l.title}</strong>
+						<p class="guide-cell-desc">{l.desc}</p>
+					</a>
+				))
+			}
+		</nav>
 	</section>
 </div>
 

@@ -27,15 +27,17 @@ const kicker = lesson.data.stage
 		<div class="prose" data-lesson-prose>
 			<Content />
 		</div>
-		<template data-mermaid-tpl="pipeline">
-			<MermaidDiagram id="pipeline" />
-		</template>
-		<template data-mermaid-tpl="states">
-			<MermaidDiagram id="states" />
-		</template>
-		<template data-mermaid-tpl="resilience">
-			<MermaidDiagram id="resilience" />
-		</template>
+		<div hidden data-mermaid-stash>
+			<div data-mermaid-tpl="pipeline">
+				<MermaidDiagram id="pipeline" />
+			</div>
+			<div data-mermaid-tpl="states">
+				<MermaidDiagram id="states" />
+			</div>
+			<div data-mermaid-tpl="resilience">
+				<MermaidDiagram id="resilience" />
+			</div>
+		</div>
 		<nav class="lesson-pager" aria-label="Lessons">
 			{
 				prev ? (
@@ -61,20 +63,3 @@ const kicker = lesson.data.stage
 		</nav>
 	</article>
 </Base>
-
-<script>
-	const prose = document.querySelector('[data-lesson-prose]');
-	if (prose) {
-		const blocks = prose.querySelectorAll<HTMLPreElement>('pre[data-language="mermaid"]');
-		blocks.forEach((pre) => {
-			const text = pre.textContent ?? '';
-			const match = text.match(/%%\s*diagram:\s*(pipeline|states|resilience)/);
-			const id = match?.[1];
-			if (!id) return;
-			const tpl = document.querySelector<HTMLTemplateElement>(`template[data-mermaid-tpl="${id}"]`);
-			if (!tpl) return;
-			const clone = tpl.content.cloneNode(true);
-			pre.replaceWith(clone);
-		});
-	}
-</script>
