@@ -1,12 +1,14 @@
 ---
 import Base from '../layouts/Base.astro';
 import PoolPicture from '../components/PoolPicture.astro';
+import HomeTutorial from '../components/HomeTutorial.astro';
 ---
 
 <Base
-	title="Worker pool"
-	description="Interactive picture of one Go worker pool: producer, buffered channel, worker goroutines, and results, with a timeout and retry mode."
+	title="Worker pool — Interactive Go Concurrency & System Design Guide"
+	description="Interactive picture and system-design guide for one Go worker pool: producer, buffered channel, worker goroutines, backpressure, timeouts, and retry backoff."
 	layout="full"
 >
 	<PoolPicture />
+	<HomeTutorial />
 </Base>

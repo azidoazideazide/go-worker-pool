@@ -1,0 +1,334 @@
+---
+/**
+ * HomeTutorial — modular system-design tutorial and guide placed below
+ * PoolPicture on the Overview (Home) page.
+ *
+ * Kept separate from PoolPicture.astro so the layout can be rearranged
+ * (grid, stacked, or split) without touching the simulation or DOM flight code.
+ */
+import MermaidDiagram from './MermaidDiagram.astro';
+import { sitePath } from '../lib/site-path';
+import type { PresetKey } from '../lib/pool-presets';
+
+const comparisonCards = [
+	{
+		badge: 'Option 1',
+		tone: 'warn',
+		title: 'Sequential (One by One)',
+		code: 'for _, job := range jobs { process(job) }',
+		summary:
+			'One worker runs one job at a time. Memory stays flat, but when 100 emails or image uploads arrive at once, 99 wait in a single slow line.',
+		metric: 'Low memory · Very slow batch time',
+	},
+	{
+		badge: 'Option 2',
+		tone: 'alert',
+		title: 'Unbounded (All at Once)',
+		code: 'for _, job := range jobs { go process(job) }',
+		summary:
+			'Spawns a new goroutine for every incoming job with no cap. A sudden spike of 1,000 jobs starts 1,000 concurrent tasks, exhausting RAM, CPU, or database connections.',
+		metric: 'No safety cap · Crashes under spikes',
+	},
+	{
+		badge: 'Option 3 · This Site',
+		tone: 'ok',
+		title: 'Worker Pool (Bounded)',
+		code: 'jobs := make(chan Job, 6) // + 3 workers',
+		summary:
+			'A fixed team of workers pulls from one buffered channel. Three jobs run in parallel, up to six wait on the conveyor belt, and when full, backpressure safely slows the producer.',
+		metric: 'Fast throughput · Predictable resources',
+	},
+] as const;
+
+const workloadCards = [
+	{
+		tag: 'EMAIL',
+		tone: 'email',
+		category: 'I/O-Bound Network Work',
+		work: '1s–2s · SMTP 421',
+		desc: 'Waiting on an external mail server. Workers spend most of their time waiting on network replies, so a pool processes several emails concurrently without flooding the SMTP server.',
+	},
+	{
+		tag: 'WEBHOOK',
+		tone: 'webhook',
+		category: 'I/O-Bound HTTP Calls',
+		work: '1s–3s · HTTP 503',
+		desc: 'Sending event notifications to customer servers that may be slow or return HTTP 503. Needs a per-attempt context deadline and retry backoff.',
+	},
+	{
+		tag: 'IMG',
+		tone: 'image',
+		category: 'CPU-Bound Processing',
+		work: '3s–5s · decoder busy',
+		desc: 'Resizing or encoding images uses heavy CPU and memory. Capping the worker count stops 50 large uploads from freezing the machine.',
+	},
+	{
+		tag: 'SYNC',
+		tone: 'sync',
+		category: 'Connection-Limited Work',
+		work: '2s–4s · DB conn reset',
+		desc: 'Writing batches to a database that only permits a small pool of active connections at the same time.',
+	},
+] as const;
+
+const zoneCards = [
+	{
+		num: '01',
+		title: 'Producer',
+		code: 'jobs <- job',
+		analogy: 'The sender at the start of the belt',
+		desc: 'Creates job packets and sends them into the channel. If all workers are busy and all buffer slots are full, the producer waits right at the outlet (Blocked).',
+	},
+	{
+		num: '02',
+		title: 'Channel & Buffer',
+		code: 'jobs := make(chan Job, N)',
+		analogy: 'A short conveyor belt with N waiting slots',
+		desc: 'Holds waiting jobs in first-in, first-out order. Slot [0] on the right is the front: the next free worker always takes Slot [0]. If a worker is already idle, a new job skips the belt (Handoff).',
+	},
+	{
+		num: '03',
+		title: 'Workers (Gophers)',
+		code: 'for job := range jobs',
+		analogy: 'A fixed team of clerks (1 to 6)',
+		desc: 'Each gopher is one goroutine taking one job at a time. Its pose shows its state: Idle (waiting on <-jobs), Busy (running a job), Alert (timeout or error), Draining, or Offline.',
+	},
+	{
+		num: '04',
+		title: 'Results & Trays',
+		code: 'results <- Result{}',
+		analogy: 'Finished outbox and dead-letter tray',
+		desc: 'Every finished job sends one Result to Done. In Resilience mode, failed attempts wait in Retry backoff (in Zone 01) and move to Failed after 3 attempts.',
+	},
+] as const;
+
+const scenarioCards: ReadonlyArray<{
+	key: PresetKey;
+	num: number;
+	title: string;
+	mode: string;
+	whatToWatch: string;
+}> = [
+	{
+		key: 'steady',
+		num: 1,
+		title: 'Steady flow',
+		mode: 'Core · 3 workers · cap 6',
+		whatToWatch:
+			'Workers finish jobs faster than they arrive. Watch how a send to an Idle gopher skips the buffer slots completely (Handoff).',
+	},
+	{
+		key: 'backpressure',
+		num: 2,
+		title: 'Backpressure',
+		mode: 'Core · 2 workers · cap 6',
+		whatToWatch:
+			'Two workers cannot keep up. All 6 buffer slots fill up, the FULL badge lights up, and the producer blocks on send until Slot [0] opens.',
+	},
+	{
+		key: 'timeouts',
+		num: 3,
+		title: 'Timeout & retry',
+		mode: 'Resilience · 3 workers · ctx 4s',
+		whatToWatch:
+			'Slow jobs exceed the 4s context deadline. The gopher flashes Alert, the job waits in Retry backoff with jitter, and after 3 attempts lands in Failed.',
+	},
+	{
+		key: 'drain',
+		num: 4,
+		title: 'Drain & idle',
+		mode: 'Core · Auto-send off',
+		whatToWatch:
+			'The producer stops sending new jobs. Workers drain the remaining packets from Slot [0] one by one, then park on <-jobs in Idle state.',
+	},
+];
+
+const stageCards = [
+	{
+		stage: 'Stage 1 · For Everyone',
+		subtitle: 'System Design & Visual Rules (No Go experience required)',
+		lessons: [
+			{
+				order: 'Lesson 1',
+				title: 'Concepts',
+				href: sitePath('lessons/design/'),
+				desc: 'How the 4 zones, handoff, buffer slots, backpressure, and worker states work, with visual Mermaid diagrams.',
+			},
+			{
+				order: 'Lesson 2',
+				title: 'Resilience',
+				href: sitePath('lessons/resilience/'),
+				desc: 'How production systems handle timeouts, transient errors, retry backoff with jitter, dead-letter queues, and 6 common pitfalls.',
+			},
+		],
+	},
+	{
+		stage: 'Stage 2 · For Software Engineers',
+		subtitle: 'Go Concurrency Syntax & Hands-On Implementation',
+		lessons: [
+			{
+				order: 'Lesson 3',
+				title: 'Go Syntax',
+				href: sitePath('lessons/syntax/'),
+				desc: 'Focused Go tutorial: goroutines, buffered channels, directional types, range/close, sync.WaitGroup, and select.',
+			},
+			{
+				order: 'Lesson 4',
+				title: 'Build It',
+				href: sitePath('lessons/setup/'),
+				desc: 'Step-by-step 5-part blueprint to write, shut down cleanly, and race-test your own worker pool in processor/.',
+			},
+		],
+	},
+] as const;
+---
+
+<div class="home-tutorial" data-home-tutorial>
+	<section class="tut-section" data-tutorial-section="why" aria-labelledby="tut-why-title">
+		<header class="tut-head">
+			<p class="tut-kicker">01 · System Design Overview</p>
+			<h2 class="tut-title" id="tut-why-title">What is a worker pool, and why does it matter?</h2>
+			<p class="tut-lead">
+				Modern applications constantly run background jobs — sending confirmation emails, delivering webhooks,
+				resizing uploaded photos, or syncing database rows. This interactive site shows how a <strong>worker pool</strong>
+				processes those jobs fast without overloading your server.
+			</p>
+		</header>
+
+		<div class="tut-card-grid tut-card-grid-3">
+			{
+				comparisonCards.map((card) => (
+					<article class="tut-card" data-tone={card.tone}>
+						<div class="tut-card-top">
+							<span class={`tut-pill tut-pill-${card.tone}`}>{card.badge}</span>
+							<span class="tut-metric">{card.metric}</span>
+						</div>
+						<h3 class="tut-card-title">{card.title}</h3>
+						<code class="tut-card-code">{card.code}</code>
+						<p class="tut-card-body">{card.summary}</p>
+					</article>
+				))
+			}
+		</div>
+
+		<MermaidDiagram id="comparison" />
+
+		<div class="tut-subblock">
+			<h3 class="tut-subtitle">When do you need a worker pool? (The 4 job types in the picture)</h3>
+			<p class="tut-sublead">
+				Every packet moving across the stage above represents one of four real-world background workloads:
+			</p>
+			<div class="tut-card-grid tut-card-grid-4">
+				{
+					workloadCards.map((item) => (
+						<article class="tut-job-card">
+							<div class="tut-job-head">
+								<span class={`tut-job-tag tut-job-${item.tone}`}>{item.tag}</span>
+								<span class="tut-job-work">{item.work}</span>
+							</div>
+							<strong class="tut-job-cat">{item.category}</strong>
+							<p class="tut-job-desc">{item.desc}</p>
+						</article>
+					))
+				}
+			</div>
+		</div>
+	</section>
+
+	<section class="tut-section" data-tutorial-section="zones" aria-labelledby="tut-zones-title">
+		<header class="tut-head">
+			<p class="tut-kicker">02 · Reading the Telemetry Board</p>
+			<h2 class="tut-title" id="tut-zones-title">How the 4 zones work together</h2>
+			<p class="tut-lead">
+				Think of the stage above as a short <strong>conveyor belt with 6 slots</strong> and a fixed team of
+				<strong>3 gopher workers</strong> at the end. Every visual element maps directly to one line of Go code.
+			</p>
+		</header>
+
+		<div class="tut-card-grid tut-card-grid-4">
+			{
+				zoneCards.map((z) => (
+					<article class="tut-zone-card">
+						<div class="tut-zone-head">
+							<span class="tut-zone-num">{z.num}</span>
+							<h3 class="tut-card-title">{z.title}</h3>
+						</div>
+						<code class="tut-card-code">{z.code}</code>
+						<p class="tut-zone-analogy">{z.analogy}</p>
+						<p class="tut-card-body">{z.desc}</p>
+					</article>
+				))
+			}
+		</div>
+	</section>
+
+	<section class="tut-section" data-tutorial-section="try" aria-labelledby="tut-try-title">
+		<header class="tut-head">
+			<p class="tut-kicker">03 · Interactive Scenarios &amp; Curriculum</p>
+			<h2 class="tut-title" id="tut-try-title">Try 4 real scenarios in the picture above</h2>
+			<p class="tut-lead">
+				Click any scenario below to load that preset into the telemetry board at the top of the page and watch how
+				the channel buffer and workers respond.
+			</p>
+		</header>
+
+		<div class="tut-card-grid tut-card-grid-4">
+			{
+				scenarioCards.map((sc) => (
+					<article class="tut-scenario-card">
+						<div class="tut-scenario-top">
+							<span class="tut-zone-num">{sc.num}</span>
+							<div>
+								<h3 class="tut-card-title">{sc.title}</h3>
+								<span class="tut-scenario-meta">{sc.mode}</span>
+							</div>
+						</div>
+						<p class="tut-card-body">{sc.whatToWatch}</p>
+						<button type="button" class="btn tut-try-btn" data-try-preset={sc.key}>
+							Load preset {sc.num} in picture ↑
+						</button>
+					</article>
+				))
+			}
+		</div>
+
+		<div class="tut-stages">
+			{
+				stageCards.map((group) => (
+					<div class="tut-stage-box">
+						<div class="tut-stage-head">
+							<span class="tut-kicker">{group.stage}</span>
+							<h3 class="tut-subtitle">{group.subtitle}</h3>
+						</div>
+						<div class="tut-lesson-list">
+							{group.lessons.map((lesson) => (
+								<a class="tut-lesson-link" href={lesson.href}>
+									<span class="tut-lesson-order">{lesson.order}</span>
+									<strong class="tut-lesson-title">{lesson.title} →</strong>
+									<span class="tut-lesson-desc">{lesson.desc}</span>
+								</a>
+							))}
+						</div>
+					</div>
+				))
+			}
+		</div>
+	</section>
+</div>
+
+<script>
+	const buttons = document.querySelectorAll<HTMLButtonElement>('[data-try-preset]');
+	buttons.forEach((btn) => {
+		btn.addEventListener('click', () => {
+			const key = btn.getAttribute('data-try-preset');
+			if (!key) return;
+			const radio = document.querySelector<HTMLInputElement>(`input[name="pool-preset"][value="${key}"]`);
+			if (radio) {
+				radio.checked = true;
+				radio.dispatchEvent(new Event('change', { bubbles: true }));
+			}
+			const stage = document.getElementById('pool-title');
+			stage?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		});
+	});
+</script>
