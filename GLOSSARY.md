@@ -181,11 +181,11 @@ A small list of job packets as chips: Retry backoff, Done, or Failed.
 _Avoid_: bin, bucket, list, inbox
 
 **Readout**:
-The telemetry tiles and the event log under the stage. It shows numbers such as `len(jobs)` and `busy`.
+The telemetry counts and the recent-event line on the status bar under the stage. It shows numbers such as `len(jobs)`, `busy`, and `done`.
 _Avoid_: dashboard, stats, HUD, metrics panel
 
 **Controls**:
-The decks under the readout: Presets, Run, Pool, and Context.
+The controls on the status bar under the stage. Run, Step, Reset, and the clock stay on the bar. Presets, Pool, and Context open from buttons on the bar.
 _Avoid_: toolbar, settings, instrument bar
 
 **Preset**:

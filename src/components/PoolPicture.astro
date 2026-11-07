@@ -73,10 +73,13 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 			<circle cx="8" cy="8" r="5.5"></circle>
 			<path d="M8 5v3.2l2 1.3"></path>
 		</symbol>
+		<symbol id="pool-icon-chevron" viewBox="0 0 16 16">
+			<path d="m4 6 4 4 4-4"></path>
+		</symbol>
 	</svg>
 
 	<div class="pool-layout">
-		<div class="stage-frame">
+		<div class="stage-grid">
 			<header class="stage-head">
 				<div class="stage-title">
 					<h1 id="pool-title">Worker pool</h1>
@@ -292,88 +295,115 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 
 				<div class="flight-layer" data-flight-layer aria-hidden="true"></div>
 			</div>
-
-			<div class="readout" aria-label="Readout">
-				<dl class="tiles">
-					<div class="tile"><dt>len(jobs)</dt><dd data-tile="len">0/0</dd></div>
-					<div class="tile"><dt>busy</dt><dd data-tile="busy">0/0</dd></div>
-					<div class="tile" data-tone="ok"><dt>done</dt><dd data-tile="done">0</dd></div>
-					<div class="tile" data-tone="warn" data-resilience-only><dt>retried</dt><dd data-tile="retried">0</dd></div>
-					<div class="tile" data-tone="alert" data-resilience-only><dt>timed out</dt><dd data-tile="timedOut">0</dd></div>
-					<div class="tile" data-tone="alert" data-resilience-only><dt>failed</dt><dd data-tile="failed">0</dd></div>
-				</dl>
-				<ol class="event-log" data-log aria-label="Recent events"></ol>
-			</div>
 		</div>
 
-		<section class="deck deck-presets" aria-labelledby="deck-presets-title">
-			<h2 class="deck-title" id="deck-presets-title">Presets <small>keys 1–4</small></h2>
-			<div class="preset-grid">
-				{
-					presets.map((p) => (
-						<label class="preset">
-							<input type="radio" name="pool-preset" value={p.key} checked={p.key === DEFAULT_PRESET} />
-							<span class="preset-num" aria-hidden="true">{p.order}</span>
-							<span class="preset-name">{p.label}</span>
-							<span class="preset-meta">{presetMeta(p.key)}</span>
-						</label>
-					))
-				}
-			</div>
-		</section>
+		<div class="status-readout">
+			<dl class="tiles">
+				<div class="tile"><dt>len(jobs)</dt><dd data-tile="len">0/0</dd></div>
+				<div class="tile"><dt>busy</dt><dd data-tile="busy">0/0</dd></div>
+				<div class="tile" data-tone="ok"><dt>done</dt><dd data-tile="done">0</dd></div>
+				<div class="tile" data-tone="warn" data-resilience-only><dt>retried</dt><dd data-tile="retried">0</dd></div>
+				<div class="tile" data-tone="alert" data-resilience-only><dt>timed out</dt><dd data-tile="timedOut">0</dd></div>
+				<div class="tile" data-tone="alert" data-resilience-only><dt>failed</dt><dd data-tile="failed">0</dd></div>
+			</dl>
+			<ol class="event-log" data-log aria-label="Recent events"></ol>
+		</div>
 
-		<section class="deck deck-run" aria-labelledby="deck-run-title">
-			<h2 class="deck-title" id="deck-run-title">Run <span class="clock" data-clock>t = 0.0s</span></h2>
-			<div class="run-row">
-				<button type="button" class="btn btn-primary btn-run" data-action="run">
-					<svg class="icon icon-play" aria-hidden="true"><use href="#pool-icon-play"></use></svg>
-					<svg class="icon icon-pause" aria-hidden="true"><use href="#pool-icon-pause"></use></svg>
-					<span data-run-text>Run</span>
-				</button>
-				<button type="button" class="btn" data-action="step" aria-label="Step 0.5 seconds">
-					<svg class="icon" aria-hidden="true"><use href="#pool-icon-step"></use></svg>
-					+0.5s
-				</button>
-				<button type="button" class="btn" data-action="reset">
-					<svg class="icon" aria-hidden="true"><use href="#pool-icon-reset"></use></svg>
-					Reset
-				</button>
+		<div class="status-dock">
+			<div id="panel-presets" class="status-panel" hidden aria-labelledby="panel-presets-title">
+				<h2 class="panel-title" id="panel-presets-title">Presets <small>keys 1–4</small></h2>
+				<div class="preset-grid">
+					{
+						presets.map((p) => (
+							<label class="preset">
+								<input type="radio" name="pool-preset" value={p.key} checked={p.key === DEFAULT_PRESET} />
+								<span class="preset-num" aria-hidden="true">{p.order}</span>
+								<span class="preset-name">{p.label}</span>
+								<span class="preset-meta">{presetMeta(p.key)}</span>
+							</label>
+						))
+					}
+				</div>
 			</div>
-			<p class="deck-note">Step pauses the picture and moves time forward by 0.5s.</p>
-		</section>
 
-		<section class="deck deck-pool" aria-labelledby="deck-pool-title">
-			<h2 class="deck-title" id="deck-pool-title">Pool</h2>
-			<div class="field">
-				<label for="pool-workers">Workers</label>
-				<output for="pool-workers" data-out="workers">{initial.workers}</output>
-				<input id="pool-workers" type="range" min="1" max={MAX_WORKERS} step="1" value={initial.workers} data-input="workers" />
+			<div id="panel-pool" class="status-panel" hidden aria-labelledby="panel-pool-title">
+				<h2 class="panel-title" id="panel-pool-title">Pool</h2>
+				<div class="panel-fields">
+					<div class="field">
+						<label for="pool-workers">Workers</label>
+						<output for="pool-workers" data-out="workers">{initial.workers}</output>
+						<input id="pool-workers" type="range" min="1" max={MAX_WORKERS} step="1" value={initial.workers} data-input="workers" />
+					</div>
+					<div class="field">
+						<label for="pool-buffer">Buffer <code>cap(jobs)</code></label>
+						<output for="pool-buffer" data-out="buffer">{initial.capacity}</output>
+						<input id="pool-buffer" type="range" min="0" max={MAX_BUFFER} step="1" value={initial.capacity} data-input="buffer" />
+					</div>
+				</div>
+				<p class="panel-note">make() fixes the buffer size, so a new size restarts the pool.</p>
 			</div>
-			<div class="field">
-				<label for="pool-buffer">Buffer <code>cap(jobs)</code></label>
-				<output for="pool-buffer" data-out="buffer">{initial.capacity}</output>
-				<input id="pool-buffer" type="range" min="0" max={MAX_BUFFER} step="1" value={initial.capacity} data-input="buffer" />
-			</div>
-			<p class="deck-note">make() fixes the buffer size, so a new size restarts the pool.</p>
-		</section>
 
-		<section class="deck deck-context" aria-labelledby="deck-context-title" data-disabled={initial.mode === 'core' ? 'true' : 'false'}>
-			<h2 class="deck-title" id="deck-context-title">Context</h2>
-			<div class="field">
-				<label for="pool-timeout">ctx timeout</label>
-				<output for="pool-timeout" data-out="timeout">{`${initial.timeoutSec}s`}</output>
-				<input id="pool-timeout" type="range" min="2" max="6" step="1" value={initial.timeoutSec} data-input="timeout" />
+			<div
+				id="panel-context"
+				class="status-panel"
+				hidden
+				aria-labelledby="panel-context-title"
+				data-disabled={initial.mode === 'core' ? 'true' : 'false'}
+			>
+				<h2 class="panel-title" id="panel-context-title">Context</h2>
+				<div class="panel-fields">
+					<div class="field">
+						<label for="pool-timeout">ctx timeout</label>
+						<output for="pool-timeout" data-out="timeout">{`${initial.timeoutSec}s`}</output>
+						<input id="pool-timeout" type="range" min="2" max="6" step="1" value={initial.timeoutSec} data-input="timeout" />
+					</div>
+					<div class="field">
+						<label for="pool-spike">Spike chance</label>
+						<output for="pool-spike" data-out="spike">{`${Math.round(initial.spikeChance * 100)}%`}</output>
+						<input id="pool-spike" type="range" min="0" max="50" step="5" value={Math.round(initial.spikeChance * 100)} data-input="spike" />
+					</div>
+				</div>
+				<p class="panel-note" data-context-note>Core mode has no deadlines. Switch to Resilience to use these.</p>
 			</div>
-			<div class="field">
-				<label for="pool-spike">Spike chance</label>
-				<output for="pool-spike" data-out="spike">{`${Math.round(initial.spikeChance * 100)}%`}</output>
-				<input id="pool-spike" type="range" min="0" max="50" step="5" value={Math.round(initial.spikeChance * 100)} data-input="spike" />
-			</div>
-			<p class="deck-note" data-context-note>Core mode has no deadlines. Switch to Resilience to use these.</p>
-		</section>
 
-		<p class="sr-only" aria-live="polite" data-announcer></p>
+			<div class="status-controls">
+				<div class="run-cluster">
+					<button type="button" class="btn btn-primary btn-run" data-action="run">
+						<svg class="icon icon-play" aria-hidden="true"><use href="#pool-icon-play"></use></svg>
+						<svg class="icon icon-pause" aria-hidden="true"><use href="#pool-icon-pause"></use></svg>
+						<span data-run-text>Run</span>
+					</button>
+					<button type="button" class="btn" data-action="step" aria-label="Step 0.5 seconds">
+						<svg class="icon" aria-hidden="true"><use href="#pool-icon-step"></use></svg>
+						+0.5s
+					</button>
+					<button type="button" class="btn" data-action="reset">
+						<svg class="icon" aria-hidden="true"><use href="#pool-icon-reset"></use></svg>
+						Reset
+					</button>
+					<span class="clock" data-clock>t = 0.0s</span>
+				</div>
+				<div class="trigger-cluster">
+					<button type="button" class="bar-trigger" data-panel-trigger="presets" aria-expanded="false" aria-controls="panel-presets">
+						<span class="bar-trigger-name">Presets</span>
+						<span class="bar-summary" data-summary="presets">{`${initial.order} ${initial.label}`}</span>
+						<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
+					</button>
+					<button type="button" class="bar-trigger" data-panel-trigger="pool" aria-expanded="false" aria-controls="panel-pool">
+						<span class="bar-trigger-name">Pool</span>
+						<span class="bar-summary" data-summary="pool">{`${initial.workers}w · cap ${initial.capacity}`}</span>
+						<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
+					</button>
+					<button type="button" class="bar-trigger" data-panel-trigger="context" aria-expanded="false" aria-controls="panel-context">
+						<span class="bar-trigger-name">Context</span>
+						<span class="bar-summary" data-summary="context">{`ctx ${initial.timeoutSec}s`}</span>
+						<svg class="icon bar-chevron" aria-hidden="true"><use href="#pool-icon-chevron"></use></svg>
+					</button>
+				</div>
+			</div>
+		</div>
 	</div>
+	<p class="sr-only" aria-live="polite" data-announcer></p>
 </section>
 
 <script>
@@ -459,8 +489,25 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 		const announcer = one('[data-announcer]');
 		const autoSwitch = one<HTMLButtonElement>('[data-action="auto"]');
 		const sendButton = one<HTMLButtonElement>('[data-action="send"]');
-		const contextDeck = one('.deck-context');
 		const contextNote = one('[data-context-note]');
+		const panelNames = ['presets', 'pool', 'context'] as const;
+		type PanelName = (typeof panelNames)[number];
+		const triggers = {
+			presets: one<HTMLButtonElement>('[data-panel-trigger="presets"]'),
+			pool: one<HTMLButtonElement>('[data-panel-trigger="pool"]'),
+			context: one<HTMLButtonElement>('[data-panel-trigger="context"]'),
+		};
+		const panels = {
+			presets: one('#panel-presets'),
+			pool: one('#panel-pool'),
+			context: one('#panel-context'),
+		};
+		const summaries = {
+			presets: one('[data-summary="presets"]'),
+			pool: one('[data-summary="pool"]'),
+			context: one('[data-summary="context"]'),
+		};
+		let openPanel: PanelName | null = null;
 		const inputs = {
 			workers: one<HTMLInputElement>('[data-input="workers"]'),
 			buffer: one<HTMLInputElement>('[data-input="buffer"]'),
@@ -873,13 +920,14 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 			setData(trays.failed, 'hasItems', String(failedCount > 0));
 
 			const core = pool.mode === 'core';
-			setData(contextDeck, 'disabled', String(core));
+			setData(panels.context, 'disabled', String(core));
 			inputs.timeout.disabled = core;
 			inputs.spike.disabled = core;
 			setText(
 				contextNote,
 				core ? 'Core mode has no deadlines. Switch to Resilience to use these.' : 'Applies to the next attempt. A running attempt keeps its deadline.',
 			);
+			syncSummaries();
 			renderText();
 		}
 
@@ -1051,6 +1099,28 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 		/* Commands                                                         */
 		/* ================================================================ */
 
+		function syncSummaries() {
+			const preset = POOL_PRESETS[presetKey];
+			const presetText = `${preset.order} ${preset.label}`;
+			const poolText = `${inputs.workers.value}w · cap ${inputs.buffer.value}`;
+			const contextText = `ctx ${inputs.timeout.value}s`;
+			setText(summaries.presets, presetText);
+			setText(summaries.pool, poolText);
+			setText(summaries.context, contextText);
+			summaries.presets.title = presetText;
+			summaries.pool.title = poolText;
+			summaries.context.title = contextText;
+		}
+
+		function setOpenPanel(name: PanelName | null) {
+			openPanel = name;
+			for (const key of panelNames) {
+				const on = key === name;
+				panels[key].hidden = !on;
+				triggers[key].setAttribute('aria-expanded', on ? 'true' : 'false');
+			}
+		}
+
 		function syncControls() {
 			for (const input of all<HTMLInputElement>('input[name="pool-preset"]')) input.checked = input.value === presetKey;
 			inputs.workers.value = String(pool.workerCount);
@@ -1061,6 +1131,7 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 			outputs.buffer.textContent = String(pool.capacity);
 			outputs.timeout.textContent = `${pool.timeoutSec}s`;
 			outputs.spike.textContent = `${Math.round(pool.spikeChance * 100)}%`;
+			syncSummaries();
 		}
 
 		function loadPreset(key: PresetKey, message?: string) {
@@ -1090,6 +1161,12 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 		}
 
 		root.addEventListener('click', (event) => {
+			const trigger = (event.target as Element).closest<HTMLButtonElement>('[data-panel-trigger]');
+			const triggerName = trigger?.dataset.panelTrigger;
+			if (trigger && (triggerName === 'presets' || triggerName === 'pool' || triggerName === 'context')) {
+				setOpenPanel(openPanel === triggerName ? null : triggerName);
+				return;
+			}
 			const target = (event.target as Element).closest<HTMLElement>('[data-action]');
 			if (!target) return;
 			switch (target.dataset.action) {
@@ -1163,9 +1240,17 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 					setSpikeChance(pool, value / 100);
 					break;
 			}
+			syncSummaries();
 		});
 
 		document.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape' && openPanel) {
+				event.preventDefault();
+				const trigger = triggers[openPanel];
+				setOpenPanel(null);
+				trigger.focus();
+				return;
+			}
 			if (event.altKey || event.ctrlKey || event.metaKey) return;
 			const target = event.target as HTMLElement;
 			if (target.closest('input[type="range"], textarea, select, [contenteditable="true"]')) return;
@@ -1173,6 +1258,14 @@ const presetMeta = (key: (typeof PRESET_ORDER)[number]) => {
 			if (index < 0) return;
 			const key = PRESET_ORDER[index];
 			if (key) loadPreset(key);
+		});
+
+		document.addEventListener('pointerdown', (event) => {
+			if (!openPanel) return;
+			const target = event.target;
+			if (!(target instanceof Element)) return;
+			if (target.closest('[data-panel-trigger], .status-panel')) return;
+			setOpenPanel(null);
 		});
 
 		/* ================================================================ */

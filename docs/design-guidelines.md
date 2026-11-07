@@ -4,11 +4,11 @@ This document gives the short rules for the visual system, the Go color tokens, 
 
 ## 1. Visual Direction
 
-- The home page is a precision Go runtime telemetry board in the first view. It has three separate regions in the picture (**Stage**, **Readout**, and **Controls**), followed by a modular system-design tutorial (`HomeTutorial.astro`) below the controls.
+- The home page is a precision Go runtime telemetry board in the first view. The picture is two flat parts: the schematic stage grid (stage head and stage) and one status bar under the stage. The status bar holds the readout and the controls. A modular system-design tutorial (`HomeTutorial.astro`) follows the picture.
 - The stage shows four numbered zones: `01 Producer`, `02 Channel`, `03 Workers`, `04 Results`. Each zone has a Go code caption.
 - Each worker is an SVG Go gopher. Its pose shows the worker state.
 - Every label uses the words in `GLOSSARY.md`.
-- Inside the picture frame, one hint line in the stage head is permitted.
+- Inside the stage head, one hint line is permitted. The stage head shares the schematic grid with the stage. There is no rounded card around the picture.
 - Each lesson page uses a quiet reading column (`--reading-max`, `42rem`) and may include static HTML and CSS teaching diagrams (`src/components/diagrams/`). They render at build time, need no JavaScript or third-party library, and keep real text sizes on a 390px phone. A lesson places one with an HTML comment such as `<!-- diagram: pipeline -->`. Do not load a diagram library from a CDN.
 
 ## 2. Go Color Palette (Light Mode and Dark Mode)
@@ -20,8 +20,8 @@ Every text pair meets at least a `4.5:1` contrast ratio. See `DESIGN.md` section
 | Token | Role | Light (`[data-theme="light"]`) | Dark (`[data-theme="dark"]`) |
 | :--- | :--- | :--- | :--- |
 | `--bg-paper` | Page ground behind every panel | `#F4F8FA` | `#0B131E` |
-| `--bg-panel` | Header, zone cards, worker cards, readout, and control decks | `#FFFFFF` | `#132030` |
-| `--bg-stage` | Stage frame (the picture) behind the four zones | `#F7FAFC` | `#0E1824` |
+| `--bg-panel` | Header, zone cards, worker cards, and the status bar | `#FFFFFF` | `#132030` |
+| `--bg-stage` | Schematic grid shared by the stage head and the four zones | `#F7FAFC` | `#0E1824` |
 | `--bg-inset` | Code captions, readout tiles, and empty docks | `#EEF4F7` | `#0F1B29` |
 | `--bg-channel` | Channel pipe that holds the buffer slots | `#DCEFF5` | `#0F293A` |
 | `--bg-slot` | One empty buffer slot | `#EDF7FA` | `#16354B` |
@@ -95,7 +95,7 @@ Every text pair meets at least a `4.5:1` contrast ratio. See `DESIGN.md` section
 | Token | Role | Light (`[data-theme="light"]`) | Dark (`[data-theme="dark"]`) |
 | :--- | :--- | :--- | :--- |
 | `--shadow-1` | Resting cards (hairline-first, very soft) | `0 1px 2px rgb(15 23 42 / 0.06), 0 1px 1px rgb(15 23 42 / 0.04)` | `0 1px 2px rgb(0 0 0 / 0.35)` |
-| `--shadow-2` | Lifted elements: a job packet in flight and the sticky mobile run bar | `0 8px 20px -10px rgb(15 23 42 / 0.28), 0 2px 4px -2px rgb(15 23 42 / 0.08)` | `0 10px 24px -12px rgb(0 0 0 / 0.7), 0 2px 4px -2px rgb(0 0 0 / 0.4)` |
+| `--shadow-2` | Lifted elements: a job packet in flight and the sticky phone control strip | `0 8px 20px -10px rgb(15 23 42 / 0.28), 0 2px 4px -2px rgb(15 23 42 / 0.08)` | `0 10px 24px -12px rgb(0 0 0 / 0.7), 0 2px 4px -2px rgb(0 0 0 / 0.4)` |
 | `--selection` | Text selection highlight | `rgb(0 173 216 / 0.22)` | `rgb(93 201 226 / 0.3)` |
 
 **Derived tints**: `--state-busy-soft`, `--state-ok-soft`, `--state-alert-soft` (each `12%`), and `--state-warn-soft` (`14%`). Each is `color-mix(in srgb, var(--state-*) N%, transparent)`, so it follows the theme.
@@ -128,7 +128,7 @@ New tokens: `--bg-stage`, `--bg-inset`, `--bg-packet`, `--grid-line`, `--ink-fai
 - **Durations**: `--duration-fast` (`150ms`), `--duration-normal` (`200ms`), `--duration-shift` (`260ms`), `--duration-flight` (`420ms`), `--duration-alert` (`700ms`).
 - **Easings**: `--ease-out` (`cubic-bezier(0.23, 1, 0.32, 1)`), `--ease-in-out` (`cubic-bezier(0.77, 0, 0.175, 1)`), `--ease-spring` (`cubic-bezier(0.22, 1, 0.36, 1)`).
 - **Stacking**: `--z-flight` (`20`), `--z-sticky` (`30`).
-- **Elevation**: `--shadow-1` for resting cards. `--shadow-2` only for a job packet in flight and the sticky mobile run bar.
+- **Elevation**: `--shadow-1` for resting cards inside the stage. `--shadow-2` only for a job packet in flight and the sticky phone control strip. The stage grid and the status bar are flat (`border-radius: 0`, no resting shadow).
 
 ## 5. Token Rules
 
@@ -140,7 +140,10 @@ New tokens: `--bg-stage`, `--bg-inset`, `--bg-packet`, `--grid-line`, `--ink-fai
 ## 6. Layout Rules
 
 - The pool uses container queries (`container: pool`): one column below `40rem`, a two by two grid from `40rem` to `75rem`, and four columns (`11rem 1fr 1.2fr 11.5rem`) from `75rem`.
-- Below `40rem`, the Run deck sticks to the bottom of the viewport and respects `env(safe-area-inset-bottom)`.
+- The stage head and the stage share one schematic grid. The status bar under the stage is one flat strip: Run, Step, Reset, and the clock stay visible; Presets, Pool, and Context open from buttons.
+- Below `40rem`, the readout stays under the stage. The control strip sticks to the bottom of the viewport, respects `env(safe-area-inset-bottom)`, and docks an open panel above itself.
+- From `40rem` to `75rem`, the bar is two hairline strips: the readout on top, and Run plus the Presets, Pool, and Context buttons below.
+- From `75rem`, Run, the readout, and those buttons sit on one row.
 - No page may scroll horizontally at `390px`, `768px`, `1024px`, or `1440px`. Long code in a lesson scrolls inside its own `pre`.
 - Retry backoff stays in the Producer zone. Failed stays in the Results zone. Do not add columns for them.
 
